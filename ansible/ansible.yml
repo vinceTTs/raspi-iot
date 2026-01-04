@@ -141,19 +141,47 @@
       become_user: "{{ ansible_user_id }}"
       changed_when: false
 
-    - name: Export buckets JSON from InfluxDB
+    - name: Wait for InfluxDB port to be ready
+      wait_for:
+        host: 127.0.0.1
+        port: 8086
+        delay: 2
+        timeout: 120
+
+    - name: Wait for InfluxDB CLI ping to succeed
+      shell: |
+        docker exec influxdb influx ping --host http://localhost:8086
+      args:
+        chdir: "{{ user_home.stdout }}/raspi-iot"
+      register: influx_ping
+      retries: 30
+      delay: 2
+      until: influx_ping.rc == 0
+      changed_when: false
+      become_user: "{{ ansible_user_id }}"
+
+    - name: Get bucket IDs for sensors and _monitoring
       shell: |
         docker exec -e INFLUX_TOKEN=raspi-admin-token influxdb sh -lc '
-          influx bucket list --org home --json > /var/lib/influxdb2/buckets.json
+          SENSORS_ID=$(influx bucket list --org home | awk "NR>1 && $2==\"sensors\"{print $1; exit}");
+          MONITORING_ID=$(influx bucket list --org home | awk "NR>1 && $2==\"_monitoring\"{print $1; exit}");
+          echo "$SENSORS_ID $MONITORING_ID"
         '
       args:
         chdir: "{{ user_home.stdout }}/raspi-iot"
+      register: bucket_ids
+      changed_when: false
       become_user: "{{ ansible_user_id }}"
 
-    - name: Slurp buckets.json
-      slurp:
-        src: "{{ user_home.stdout }}/raspi-iot/influxdb/buckets.json"
-      register: buckets_json
+    - name: Derive bucket ID facts
+      set_fact:
+        sensors_bucket_id: "{{ (bucket_ids.stdout.split()) | first | default('') }}"
+        monitoring_bucket_id: "{{ (bucket_ids.stdout.split()) | last | default('') }}"
+
+    - name: Fail if bucket IDs could not be determined
+      fail:
+        msg: "Could not determine bucket IDs for sensors and/or _monitoring. Output: {{ bucket_ids.stdout | default('') }}"
+      when: sensors_bucket_id | length == 0 or monitoring_bucket_id | length == 0
 
     - name: Derive bucket IDs for sensors and _monitoring
       set_fact:
