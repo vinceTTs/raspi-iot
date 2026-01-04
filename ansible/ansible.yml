@@ -54,6 +54,14 @@
         owner: "{{ ansible_user_id }}"
         group: "{{ ansible_user_id }}"
 
+    - name: Create grafana directory
+      file:
+        path: "{{ user_home.stdout }}/raspi-iot/grafana"
+        state: directory
+        mode: '0755'
+        owner: "{{ ansible_user_id }}"
+        group: "{{ ansible_user_id }}"
+
     - name: Generate CA key and certificate
       shell: |
         openssl genrsa -out ca.key 2048
