@@ -141,20 +141,6 @@
       become_user: "{{ ansible_user_id }}"
       changed_when: false
 
-    - name: Wait for InfluxDB to be ready
-      shell: docker exec influxdb influx ping
-      retries: 15
-      delay: 4
-      until: true
-      changed_when: false
-
-    - name: Create Grafana token via script execution
-      shell: |
-        docker exec influxdb bash /scripts/influxdb-create-token-grafana.sh
-      become_user: "{{ ansible_user_id }}"
-      changed_when: false
-      ignore_errors: yes
-
     - name: Display success message
       debug:
         msg: "Docker and Docker-Compose installed successfully! Docker-compose will start automatically on boot. Please re-login for group changes to take effect."
