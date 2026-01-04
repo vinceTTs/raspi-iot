@@ -31,6 +31,7 @@
       shell: echo $HOME
       register: user_home
       become: no
+      changed_when: false
 
     - name: Create certificates directory
       file:
@@ -49,6 +50,7 @@
       shell: |
         openssl genrsa -out ca.key 2048
         openssl req -new -x509 -key ca.key -out ca.crt -days 3650 -subj "/CN=Mosquitto CA"
+      when: not ca_cert.stat.exists
       args:
         chdir: "{{ user_home.stdout }}/raspi-iot/certs"
       become_user: "{{ ansible_user_id }}"
@@ -67,6 +69,7 @@
       file:
         path: "{{ user_home.stdout }}/raspi-iot/certs"
         recurse: yes
+      when: not ca_cert.stat.exists
         mode: '0644'
       become_user: "{{ ansible_user_id }}"
 
