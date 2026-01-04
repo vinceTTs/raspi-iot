@@ -32,6 +32,15 @@
       register: user_home
       become: no
 
+    - name: Ensure raspi-iot directory has correct permissions
+      file:
+        path: "{{ user_home.stdout }}/raspi-iot"
+        state: directory
+        owner: "{{ ansible_user_id }}"
+        group: "{{ ansible_user_id }}"
+        mode: '0755'
+        recurse: no
+
     - name: Create certificates directory
       file:
         path: "{{ user_home.stdout }}/raspi-iot/certs"
