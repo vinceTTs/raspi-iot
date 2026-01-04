@@ -139,31 +139,42 @@
 
     - name: Ensure Grafana token exists
       block:
-        - name: Check if Grafana token file exists
-          stat:
-            path: "{{ user_home.stdout }}/raspi-iot/influxdb/grafana.token"
-          register: grafana_token_file
+        - name: Wait for InfluxDB API to respond
+          shell: docker exec influxdb influx ping
+          register: influx_ping
+          retries: 10
+          delay: 5
+          until: influx_ping.rc == 0
+          changed_when: false
 
-        - name: Create Grafana token if missing
+        - name: Create Grafana token
           shell: |
-            TOKEN=$(docker exec influxdb sh -c "influx auth create --org home --read-buckets --json" | sed -n 's/.*"token":"\([^" ]*\)".*/\1/p')
+            TOKEN=$(docker exec influxdb sh -c "influx auth create --org home --read-buckets --json -u admin -p admin123" | sed -n 's/.*\"token\":\"\([^\" ]*\)\".*/\1/p')
             echo "$TOKEN" > {{ user_home.stdout }}/raspi-iot/influxdb/grafana.token
           become_user: "{{ ansible_user_id }}"
-          when: not grafana_token_file.stat.exists
+
+        - name: Read Grafana token file
+          shell: cat {{ user_home.stdout }}/raspi-iot/influxdb/grafana.token
+          register: grafana_token_file_content
+          become_user: "{{ ansible_user_id }}"
+
+        - name: Fail if token is empty
+          fail:
+            msg: "Failed to create Grafana token in InfluxDB"
+          when: grafana_token_file_content.stdout | trim | length == 0
 
         - name: Copy InfluxDB token to .env file
           shell: |
-            TOKEN=$(cat {{ user_home.stdout }}/raspi-iot/influxdb/grafana.token)
-            echo "INFLUXDB_GRAFANA_TOKEN=$TOKEN" > {{ user_home.stdout }}/raspi-iot/.env
+            echo "INFLUXDB_GRAFANA_TOKEN={{ grafana_token_file_content.stdout | trim }}" > {{ user_home.stdout }}/raspi-iot/.env
           become_user: "{{ ansible_user_id }}"
-          when: grafana_token_file.stat.exists or (not grafana_token_file.stat.exists)
+          changed_when: false
 
         - name: Restart Grafana with token configuration
           shell: |
             cd {{ user_home.stdout }}/raspi-iot
             docker-compose restart grafana
           become_user: "{{ ansible_user_id }}"
-      when: true
+          changed_when: false
 
     - name: Display success message
       debug:
