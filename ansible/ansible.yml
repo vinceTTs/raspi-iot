@@ -37,6 +37,8 @@
         path: "{{ user_home.stdout }}/raspi-iot/certs"
         state: directory
         mode: '0755'
+        owner: "{{ ansible_user_id }}"
+        group: "{{ ansible_user_id }}"
       become: no
 
     - name: Check if CA certificate exists
@@ -51,13 +53,16 @@
         openssl req -new -x509 -key ca.key -out ca.crt -days 3650 -subj "/CN=Mosquitto CA"
       when: not ca_cert.stat.exists
       become: no
+      args:
+        chdir: "{{ user_home.stdout }}/raspi-iot/certs"
 
-    - name: Generate server certificate
-      shell: |
-        cd {{ user_home.stdout }}/raspi-iot/certs
-        openssl genrsa -out server.key 2048
+    - naopenssl genrsa -out server.key 2048
         openssl req -new -key server.key -out server.csr -subj "/CN=raspi.local"
         openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out server.crt -days 3650 -sha256
+      when: not ca_cert.stat.exists
+      become: no
+      args:
+        chdir: "{{ user_home.stdout }}/raspi-iot/certs"x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out server.crt -days 3650 -sha256
       when: not ca_cert.stat.exists
       become: no
 
