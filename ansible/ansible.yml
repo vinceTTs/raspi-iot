@@ -141,6 +141,43 @@
       become_user: "{{ ansible_user_id }}"
       changed_when: false
 
+    - name: Create Grafana read-only token for InfluxDB buckets
+      shell: |
+        docker exec -e INFLUX_TOKEN=raspi-admin-token influxdb sh -lc '
+        SENSORS_ID=$(influx bucket list --org home | awk "NR>1 && $2==\"sensors\" {print $1; exit}");
+        MONITORING_ID=$(influx bucket list --org home | awk "NR>1 && $2==\"_monitoring\" {print $1; exit}");
+        influx auth create --org home --read-bucket "$SENSORS_ID" --read-bucket "$MONITORING_ID" --description grafana --json | sed -n "s/.*\"token\":\"\([^\"]\+\)\".*/\1/p" > /var/lib/influxdb2/grafana-read.token
+        '
+      args:
+        chdir: "{{ user_home.stdout }}/raspi-iot"
+        creates: "{{ user_home.stdout }}/raspi-iot/influxdb/grafana-read.token"
+      become_user: "{{ ansible_user_id }}"
+
+    - name: Wait for grafana-read.token to be created
+      stat:
+        path: "{{ user_home.stdout }}/raspi-iot/influxdb/grafana-read.token"
+      register: grafana_read_token
+
+    - name: Read grafana-read.token
+      slurp:
+        src: "{{ user_home.stdout }}/raspi-iot/influxdb/grafana-read.token"
+      register: grafana_token
+      when: grafana_read_token.stat.exists
+
+    - name: Update Grafana datasource to use read-only token
+      lineinfile:
+        path: "{{ user_home.stdout }}/raspi-iot/config/grafana-datasource-influxdb.yaml"
+        regexp: '^\s*token:\s*.*$'
+        line: '      token: {{ (grafana_token.content | b64decode) | trim }}'
+      when: grafana_read_token.stat.exists
+
+    - name: Restart Grafana to apply new datasource token
+      shell: |
+        cd {{ user_home.stdout }}/raspi-iot
+        docker-compose up -d grafana
+      become_user: "{{ ansible_user_id }}"
+      when: grafana_read_token.stat.exists
+
     - name: Display success message
       debug:
         msg: "Docker and Docker-Compose installed successfully! Docker-compose will start automatically on boot. Please re-login for group changes to take effect."
