@@ -8,6 +8,10 @@
       apt:
         update_cache: yes
 
+    - name: Upgrade packages (safe)
+      apt:
+        upgrade: safe
+
     - name: Install Docker and Docker-Compose
       apt:
         name:
@@ -139,46 +143,20 @@
 
     - name: Ensure Grafana token exists
       block:
-        - name: Wait for InfluxDB API to respond
-          shell: docker exec influxdb influx ping
-          register: influx_ping
-          retries: 15
-          delay: 4
-          until: influx_ping.rc == 0
-          changed_when: false
-
-        - name: Create Grafana token (read-buckets)
-          shell: |
-            TOKEN=$(docker exec influxdb sh -c "influx auth create --host http://localhost:8086 --org home --username admin --password admin123 --json --read-buckets" | grep -o '"token":"[^\"]*"' | head -1 | cut -d '"' -f4)
-            echo "$TOKEN" > {{ user_home.stdout }}/raspi-iot/influxdb/grafana.token
+        - name: Wait for grafana.token from init script
+          wait_for:
+            path: "{{ user_home.stdout }}/raspi-iot/influxdb/grafana.token"
+            timeout: 120
           become_user: "{{ ansible_user_id }}"
-          register: create_grafana_token
-          retries: 3
-          delay: 3
-          until: create_grafana_token.rc == 0
-
-        - name: Debug influx auth create output
-          debug:
-            msg:
-              - "influx auth create rc={{ create_grafana_token.rc }}"
-              - "stdout={{ create_grafana_token.stdout | default('') }}"
-              - "stderr={{ create_grafana_token.stderr | default('') }}"
-          when: create_grafana_token is defined
 
         - name: Read Grafana token file
           shell: cat {{ user_home.stdout }}/raspi-iot/influxdb/grafana.token
           register: grafana_token_file_content
           become_user: "{{ ansible_user_id }}"
 
-        - name: Debug Grafana token file content
-          debug:
-            msg:
-              - "grafana.token length={{ grafana_token_file_content.stdout | trim | length }}"
-              - "grafana.token preview={{ grafana_token_file_content.stdout | trim }}"
-
         - name: Fail if token is empty
           fail:
-            msg: "Failed to create Grafana token in InfluxDB"
+            msg: "Grafana token file exists but is empty"
           when: grafana_token_file_content.stdout | trim | length == 0
 
         - name: Copy InfluxDB token to .env file
