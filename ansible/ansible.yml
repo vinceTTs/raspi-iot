@@ -149,7 +149,7 @@
 
         - name: Create Grafana token (read-buckets)
           shell: |
-            TOKEN=$(docker exec influxdb sh -c "influx auth create --org home --read-buckets --json -u admin -p admin123" | grep -o '"token":"[^"]*"' | head -1 | cut -d '"' -f4)
+            TOKEN=$(docker exec influxdb sh -c "influx auth create --host http://localhost:8086 --org home --username admin --password admin123 --json --read-buckets" | grep -o '"token":"[^\"]*"' | head -1 | cut -d '"' -f4)
             echo "$TOKEN" > {{ user_home.stdout }}/raspi-iot/influxdb/grafana.token
           become_user: "{{ ansible_user_id }}"
           register: create_grafana_token

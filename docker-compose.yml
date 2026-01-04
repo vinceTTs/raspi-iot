@@ -64,14 +64,14 @@ services:
     container_name: grafana
     volumes:
       - ./grafana:/var/lib/grafana
-      - ./influxdb:/var/lib/influxb2:ro
+      - ./influxdb:/var/lib/influxdb2:ro
       - ./config/grafana-datasource-influxdb.yaml:/var/lib/grafana/provisioning/datasources/influxdb.yaml
     environment:
       - GF_SERVER_ROOT_URL=http://raspi.local/
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
       - GF_AUTH_DISABLE_LOGIN_FORM=true
-      - INFLUXB_TOKEN_FILE=/var/lib/influxdb2/grafana-token
+      - INFLUXDB_GRAFANA_TOKEN=${INFLUXDB_GRAFANA_TOKEN}
     restart: unless-stopped
 
   node-red:
