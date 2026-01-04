@@ -66,8 +66,7 @@ services:
       - ./influxdb:/var/lib/influxb2:ro
       - ./config/grafana-datasource-influxdb.yaml:/var/lib/grafana/provisioning/datasources/influxdb.yaml
     environment:
-      - GF_SERVER_ROOT_URL=/grafana/
-    #  - GF_SERVER_SERVE_FROM_SUB_PATH=true
+      - GF_SERVER_ROOT_URL=http://raspi.local/
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
       - GF_AUTH_DISABLE_LOGIN_FORM=true
