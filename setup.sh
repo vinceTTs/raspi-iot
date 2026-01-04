@@ -28,17 +28,17 @@ sudo apt install -y ansible
 # Create localhost inventory file
 echo ""
 echo "Step 4/5: Creating localhost inventory..."
-cat > localhost.ini << EOF
+cat > ansible/localhost.ini << EOF
 [local]
 localhost a5/5ble_connection=local
 EOF
 
-echo "Inventory file created: localhost.ini"
+echo "Inventory file created: ansible/localhost.ini"
 
 # Run the Ansible playbook
 echo ""
-echo "Step 4/4: Running Ansible playbook..."
-ansible-playbook -i localhost.ini ansible.yml
+echo "Step 5/5: Running Ansible playbook..."
+ansible-playbook -i ansible/localhost.ini ansible/ansible.yml
 
 echo ""
 echo "=========================================="

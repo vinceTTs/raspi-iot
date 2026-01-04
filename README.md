@@ -73,7 +73,7 @@ Falls du die Schritte einzeln ausführen möchtest:
    sudo apt install -y ansible
    ```
 
-2. **Inventory-Datei erstellen (`localhost.ini`):**
+2. **Inventory-Datei erstellen (`ansible/localhost.ini`):**
    ```ini
    [local]
    localhost ansible_connection=local
@@ -81,7 +81,7 @@ Falls du die Schritte einzeln ausführen möchtest:
 
 3. **Ansible Playbook ausführen:**
    ```bash
-   ansible-playbook -i localhost.ini ansible.yml
+   ansible-playbook -i ansible/localhost.ini ansible/ansible.yml
    ```
 
 4. **Neu einloggen, damit die Docker-Gruppenmitgliedschaft wirksam wird**
@@ -95,8 +95,11 @@ Falls du die Schritte einzeln ausführen möchtest:
 ## Dateien
 
 - `setup.sh` - Automatisches Setup-Script (empfohlen)
-- `ansible.yml` - Ansible Playbook für die Installation
-- `localhost.ini` - Lokale Ansible-Inventory (wird vom setup.sh erstellt)
+- `ansible/ansible.yml` - Ansible Playbook für die Installation
+- `ansible/localhost.ini` - Lokale Ansible-Inventory (wird vom setup.sh erstellt)
+- `config/` - Konfigurationsdateien für Services (mosquitto, nginx, telegraf, grafana)
+- `scripts/` - InfluxDB Setup-Scripts
+- `certificates/` - Zertifikats-Erstellungs-Scripts
 
 ## Troubleshooting
 
