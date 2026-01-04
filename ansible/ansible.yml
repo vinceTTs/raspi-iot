@@ -48,7 +48,6 @@
 
     - name: Generate CA key and certificate
       shell: |
-        cd {{ user_home.stdout }}/raspi-iot/certs
         openssl genrsa -out ca.key 2048
         openssl req -new -x509 -key ca.key -out ca.crt -days 3650 -subj "/CN=Mosquitto CA"
       when: not ca_cert.stat.exists
@@ -56,15 +55,15 @@
       args:
         chdir: "{{ user_home.stdout }}/raspi-iot/certs"
 
-    - naopenssl genrsa -out server.key 2048
+    - name: Generate server certificate
+      shell: |
+        openssl genrsa -out server.key 2048
         openssl req -new -key server.key -out server.csr -subj "/CN=raspi.local"
         openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out server.crt -days 3650 -sha256
       when: not ca_cert.stat.exists
       become: no
       args:
-        chdir: "{{ user_home.stdout }}/raspi-iot/certs"x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out server.crt -days 3650 -sha256
-      when: not ca_cert.stat.exists
-      become: no
+        chdir: "{{ user_home.stdout }}/raspi-iot/certs"
 
     - name: Set certificate permissions
       file:
