@@ -160,45 +160,45 @@
       changed_when: false
       become_user: "{{ ansible_user_id }}"
 
-    - name: Get bucket IDs for sensors and _monitoring
+    - name: Export orgs JSON from InfluxDB
       shell: |
         docker exec -e INFLUX_TOKEN=raspi-admin-token influxdb sh -lc '
-          SENSORS_ID=$(influx bucket list --org home | awk "NR>1 && $2==\"sensors\"{print $1; exit}");
-          MONITORING_ID=$(influx bucket list --org home | awk "NR>1 && $2==\"_monitoring\"{print $1; exit}");
-          echo "$SENSORS_ID $MONITORING_ID"
+          influx org list --json > /var/lib/influxdb2/orgs.json
         '
       args:
         chdir: "{{ user_home.stdout }}/raspi-iot"
-      register: bucket_ids
-      changed_when: false
       become_user: "{{ ansible_user_id }}"
 
-    - name: Derive bucket ID facts
-      set_fact:
-        sensors_bucket_id: "{{ (bucket_ids.stdout.split()) | first | default('') }}"
-        monitoring_bucket_id: "{{ (bucket_ids.stdout.split()) | last | default('') }}"
+    - name: Slurp orgs.json
+      slurp:
+        src: "{{ user_home.stdout }}/raspi-iot/influxdb/orgs.json"
+      register: orgs_json
 
-    - name: Fail if bucket IDs could not be determined
+    - name: Derive org ID for home
+      set_fact:
+        org_id: "{{ (orgs_json.content | b64decode | from_json | selectattr('name','equalto','home') | map(attribute='id') | list)[0] }}"
+
+    - name: Fail if org ID could not be determined
       fail:
-        msg: "Could not determine bucket IDs for sensors and/or _monitoring. Output: {{ bucket_ids.stdout | default('') }}"
-      when: sensors_bucket_id | length == 0 or monitoring_bucket_id | length == 0
+        msg: "Could not determine org ID for 'home'."
+      when: org_id | length == 0
 
     - name: Derive bucket IDs for sensors and _monitoring
       set_fact:
         sensors_bucket_id: "{{ (buckets_json.content | b64decode | from_json | selectattr('name','equalto','sensors') | map(attribute='id') | list)[0] }}"
         monitoring_bucket_id: "{{ (buckets_json.content | b64decode | from_json | selectattr('name','equalto','_monitoring') | map(attribute='id') | list)[0] }}"
 
-    - name: Create Grafana read-only token (JSON output)
+    - name: Create Grafana read-only token for all buckets via API
       shell: |
         docker exec -e INFLUX_TOKEN=raspi-admin-token influxdb sh -lc '
-          influx auth create --org home \
-            --read-bucket {{ sensors_bucket_id }} \
-            --read-bucket {{ monitoring_bucket_id }} \
-            --description grafana --json > /var/lib/influxdb2/grafana-auth.json
+          PAYLOAD=''{"orgID":"{{ org_id }}","description":"grafana","permissions":[{"action":"read","resource":{"type":"buckets","orgID":"{{ org_id }}"}}] }'';
+          curl -sS -X POST http://localhost:8086/api/v2/authorizations \
+            -H "Authorization: Token $INFLUX_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD" > /var/lib/influxdb2/grafana-auth.json
         '
       args:
         chdir: "{{ user_home.stdout }}/raspi-iot"
-        creates: "{{ user_home.stdout }}/raspi-iot/influxdb/grafana-auth.json"
       become_user: "{{ ansible_user_id }}"
 
     - name: Slurp grafana-auth.json
