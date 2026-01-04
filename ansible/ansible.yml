@@ -160,42 +160,16 @@
       changed_when: false
       become_user: "{{ ansible_user_id }}"
 
-    - name: Export orgs JSON from InfluxDB
+    - name: Create Grafana read-only token for all buckets (simplified)
       shell: |
         docker exec -e INFLUX_TOKEN=raspi-admin-token influxdb sh -lc '
-          influx org list --json > /var/lib/influxdb2/orgs.json
-        '
-      args:
-        chdir: "{{ user_home.stdout }}/raspi-iot"
-      become_user: "{{ ansible_user_id }}"
-
-    - name: Slurp orgs.json
-      slurp:
-        src: "{{ user_home.stdout }}/raspi-iot/influxdb/orgs.json"
-      register: orgs_json
-
-    - name: Derive org ID for home
-      set_fact:
-        org_id: "{{ (orgs_json.content | b64decode | from_json | selectattr('name','equalto','home') | map(attribute='id') | list)[0] }}"
-
-    - name: Fail if org ID could not be determined
-      fail:
-        msg: "Could not determine org ID for 'home'."
-      when: org_id | length == 0
-
-    - name: Derive bucket IDs for sensors and _monitoring
-      set_fact:
-        sensors_bucket_id: "{{ (buckets_json.content | b64decode | from_json | selectattr('name','equalto','sensors') | map(attribute='id') | list)[0] }}"
-        monitoring_bucket_id: "{{ (buckets_json.content | b64decode | from_json | selectattr('name','equalto','_monitoring') | map(attribute='id') | list)[0] }}"
-
-    - name: Create Grafana read-only token for all buckets via API
-      shell: |
-        docker exec -e INFLUX_TOKEN=raspi-admin-token influxdb sh -lc '
-          PAYLOAD=''{"orgID":"{{ org_id }}","description":"grafana","permissions":[{"action":"read","resource":{"type":"buckets","orgID":"{{ org_id }}"}}] }'';
+          ORG_ID=$(influx org list | awk "NR>1 && $2==\"home\" {print $1; exit}");
           curl -sS -X POST http://localhost:8086/api/v2/authorizations \
             -H "Authorization: Token $INFLUX_TOKEN" \
             -H "Content-Type: application/json" \
-            -d "$PAYLOAD" > /var/lib/influxdb2/grafana-auth.json
+            -d "{\"orgID\":\"$ORG_ID\",\"description\":\"grafana\",\"permissions\":[{\"action\":\"read\",\"resource\":{\"type\":\"buckets\",\"orgID\":\"$ORG_ID\"}}]}" \
+            > /var/lib/influxdb2/grafana-auth.json;
+          grep -o '"token":"[^"]*"' /var/lib/influxdb2/grafana-auth.json | sed 's/"token":"//;s/"//' > /var/lib/influxdb2/grafana-read.token
         '
       args:
         chdir: "{{ user_home.stdout }}/raspi-iot"
