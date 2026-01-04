@@ -171,11 +171,26 @@
             -H "Authorization: Token $INFLUX_TOKEN" \
             -H "Content-Type: application/json" \
             --data @/tmp/payload.json \
-            > /var/lib/influxdb2/grafana-auth.json
+            -w "%{http_code}" -o /var/lib/influxdb2/grafana-auth.json \
+            > /var/lib/influxdb2/grafana-auth.status;
+          CODE=$(cat /var/lib/influxdb2/grafana-auth.status || echo "");
+          if [ "$CODE" != "201" ] && [ "$CODE" != "200" ]; then
+            echo "{\"error\":\"authorization creation failed\",\"status\":\"$CODE\"}" > /var/lib/influxdb2/grafana-auth.json;
+          fi
         '
       args:
         chdir: "{{ user_home.stdout }}/raspi-iot"
       become_user: "{{ ansible_user_id }}"
+
+    - name: Check grafana-auth.json presence
+      stat:
+        path: "{{ user_home.stdout }}/raspi-iot/influxdb/grafana-auth.json"
+      register: grafana_auth_json_stat
+
+    - name: Fail if grafana-auth.json not found
+      fail:
+        msg: "grafana-auth.json not found. Token creation may have failed. Ensure admin token is valid (raspi-admin-token) or reinitialize InfluxDB."
+      when: not grafana_auth_json_stat.stat.exists
 
     - name: Slurp grafana-auth.json
       slurp:
