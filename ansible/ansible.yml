@@ -68,8 +68,7 @@
         path: "{{ user_home.stdout }}/raspi-iot/certs"
         recurse: yes
         mode: '0644'
-      become_user: "{{ ansible_user_id }}"644'
-      become: no
+      become_user: "{{ ansible_user_id }}"
 
     - name: Create systemd service for docker-compose
       copy:
