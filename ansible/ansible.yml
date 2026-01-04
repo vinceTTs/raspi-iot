@@ -50,17 +50,31 @@
       file:
         path: "{{ user_home.stdout }}/raspi-iot/node-red"
         state: directory
-        mode: '0755'
-        owner: "{{ ansible_user_id }}"
-        group: "{{ ansible_user_id }}"
+        mode: '0777'
 
     - name: Create grafana directory
       file:
         path: "{{ user_home.stdout }}/raspi-iot/grafana"
         state: directory
-        mode: '0755'
-        owner: "{{ ansible_user_id }}"
-        group: "{{ ansible_user_id }}"
+        mode: '0777'
+
+    - name: Create influxdb directory
+      file:
+        path: "{{ user_home.stdout }}/raspi-iot/influxdb"
+        state: directory
+        mode: '0777'
+
+    - name: Create mosquitto data directory
+      file:
+        path: "{{ user_home.stdout }}/raspi-iot/mosquitto/data"
+        state: directory
+        mode: '0777'
+
+    - name: Create mosquitto log directory
+      file:
+        path: "{{ user_home.stdout }}/raspi-iot/mosquitto/log"
+        state: directory
+        mode: '0777'
 
     - name: Generate CA key and certificate
       shell: |
