@@ -37,8 +37,6 @@
         path: "{{ user_home.stdout }}/raspi-iot/certs"
         state: directory
         mode: '0755'
-        owner: "{{ ansible_user_id }}"
-        group: "{{ ansible_user_id }}"
       become: no
 
     - name: Check if CA certificate exists
