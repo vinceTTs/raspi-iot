@@ -164,12 +164,14 @@
       shell: |
         docker exec -e INFLUX_TOKEN=raspi-admin-token influxdb sh -lc '
           ORG_ID=$(influx org list | awk "NR>1 && $2==\"home\" {print $1; exit}");
+          cat > /tmp/payload.json <<EOF
+          {"orgID":"$ORG_ID","description":"grafana","permissions":[{"action":"read","resource":{"type":"buckets","orgID":"$ORG_ID"}}]}
+          EOF
           curl -sS -X POST http://localhost:8086/api/v2/authorizations \
             -H "Authorization: Token $INFLUX_TOKEN" \
             -H "Content-Type: application/json" \
-            -d "{\"orgID\":\"$ORG_ID\",\"description\":\"grafana\",\"permissions\":[{\"action\":\"read\",\"resource\":{\"type\":\"buckets\",\"orgID\":\"$ORG_ID\"}}]}" \
-            > /var/lib/influxdb2/grafana-auth.json;
-          grep -o '"token":"[^"]*"' /var/lib/influxdb2/grafana-auth.json | sed 's/"token":"//;s/"//' > /var/lib/influxdb2/grafana-read.token
+            --data @/tmp/payload.json \
+            > /var/lib/influxdb2/grafana-auth.json
         '
       args:
         chdir: "{{ user_home.stdout }}/raspi-iot"
