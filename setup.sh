@@ -10,20 +10,27 @@ echo "=========================================="
 echo ""
 
 # Update package list
-echo "Step 1/4: Updating package list..."
+echo "Step 1/5: Updating package list..."
 sudo apt update
+
+# Configure Git
+echo ""
+echo "Step 2/5: Configuring Git..."
+git config --global user.name "raspi"
+git config --global user.email "raspi@localhost"
+echo "Git configured with user: raspi"
 
 # Install Ansible
 echo ""
-echo "Step 2/4: Installing Ansible..."
+echo "Step 3/5: Installing Ansible..."
 sudo apt install -y ansible
 
 # Create localhost inventory file
 echo ""
-echo "Step 3/4: Creating localhost inventory..."
+echo "Step 4/5: Creating localhost inventory..."
 cat > localhost.ini << EOF
 [local]
-localhost ansible_connection=local
+localhost a5/5ble_connection=local
 EOF
 
 echo "Inventory file created: localhost.ini"
