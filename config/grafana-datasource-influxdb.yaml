@@ -10,4 +10,4 @@ datasources:
       organization: home
       defaultBuckets: sensors
     secureJsonData:
-      token: ${INFLUXDB_TOKEN}
+      token: ${INFLUXDB_GRAFANA_TOKEN}
