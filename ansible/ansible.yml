@@ -147,11 +147,15 @@
           until: influx_ping.rc == 0
           changed_when: false
 
-        - name: Create Grafana token
+        - name: Create Grafana token (read-buckets)
           shell: |
-            TOKEN=$(docker exec influxdb sh -c "influx auth create --org home --read-buckets --json -u admin -p admin123" | sed -n 's/.*\"token\":\"\([^\" ]*\)\".*/\1/p')
+            TOKEN=$(docker exec influxdb sh -c "influx auth create --org home --read-buckets --json -u admin -p admin123" | awk -F'"' '/token/ {for(i=1;i<=NF;i++){if($i=="token"){print $(i+2); exit}}}')
             echo "$TOKEN" > {{ user_home.stdout }}/raspi-iot/influxdb/grafana.token
           become_user: "{{ ansible_user_id }}"
+          register: create_grafana_token
+          retries: 3
+          delay: 3
+          until: create_grafana_token.rc == 0
 
         - name: Read Grafana token file
           shell: cat {{ user_home.stdout }}/raspi-iot/influxdb/grafana.token
