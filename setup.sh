@@ -22,22 +22,12 @@ echo "Git configured with user: raspi"
 
 # Install Ansible
 echo ""
-echo "Step 3/5: Installing Ansible..."
+echo "Step 3/4: Installing Ansible..."
 sudo apt install -y ansible
-
-# Create localhost inventory file
-echo ""
-echo "Step 4/5: Creating localhost inventory..."
-cat > ansible/localhost.ini << EOF
-[local]
-localhost a5/5ble_connection=local
-EOF
-
-echo "Inventory file created: ansible/localhost.ini"
 
 # Run the Ansible playbook
 echo ""
-echo "Step 5/5: Running Ansible playbook..."
+echo "Step 4/4: Running Ansible playbook..."
 ansible-playbook -i ansible/localhost.ini ansible/ansible.yml
 
 echo ""
