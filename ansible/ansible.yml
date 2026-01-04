@@ -141,37 +141,6 @@
       become_user: "{{ ansible_user_id }}"
       changed_when: false
 
-    - name: Ensure Grafana token exists
-      block:
-        - name: Wait for grafana.token from init script
-          wait_for:
-            path: "{{ user_home.stdout }}/raspi-iot/influxdb/grafana.token"
-            timeout: 120
-          become_user: "{{ ansible_user_id }}"
-
-        - name: Read Grafana token file
-          shell: cat {{ user_home.stdout }}/raspi-iot/influxdb/grafana.token
-          register: grafana_token_file_content
-          become_user: "{{ ansible_user_id }}"
-
-        - name: Fail if token is empty
-          fail:
-            msg: "Grafana token file exists but is empty"
-          when: grafana_token_file_content.stdout | trim | length == 0
-
-        - name: Copy InfluxDB token to .env file
-          shell: |
-            echo "INFLUXDB_GRAFANA_TOKEN={{ grafana_token_file_content.stdout | trim }}" > {{ user_home.stdout }}/raspi-iot/.env
-          become_user: "{{ ansible_user_id }}"
-          changed_when: false
-
-        - name: Restart Grafana with token configuration
-          shell: |
-            cd {{ user_home.stdout }}/raspi-iot
-            docker-compose restart grafana
-          become_user: "{{ ansible_user_id }}"
-          changed_when: false
-
     - name: Display success message
       debug:
         msg: "Docker and Docker-Compose installed successfully! Docker-compose will start automatically on boot. Please re-login for group changes to take effect."
