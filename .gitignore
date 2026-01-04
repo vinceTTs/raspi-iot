@@ -1,0 +1,14 @@
+# Runtime data and volumes
+certs/
+grafana/
+influxdb/
+mosquitto/data/
+mosquitto/log/
+
+# System-specific
+.env
+*.log
+
+# IDE
+.vscode/
+.idea/
