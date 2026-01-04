@@ -142,14 +142,14 @@
         - name: Wait for InfluxDB API to respond
           shell: docker exec influxdb influx ping
           register: influx_ping
-          retries: 10
-          delay: 5
+          retries: 15
+          delay: 4
           until: influx_ping.rc == 0
           changed_when: false
 
         - name: Create Grafana token (read-buckets)
           shell: |
-            TOKEN=$(docker exec influxdb sh -c "influx auth create --org home --read-buckets --json -u admin -p admin123" | awk -F'"' '/token/ {for(i=1;i<=NF;i++){if($i=="token"){print $(i+2); exit}}}')
+            TOKEN=$(docker exec influxdb sh -c "influx auth create --org home --read-buckets --json -u admin -p admin123" | grep -o '"token":"[^"]*"' | head -1 | cut -d '"' -f4)
             echo "$TOKEN" > {{ user_home.stdout }}/raspi-iot/influxdb/grafana.token
           become_user: "{{ ansible_user_id }}"
           register: create_grafana_token
@@ -157,10 +157,24 @@
           delay: 3
           until: create_grafana_token.rc == 0
 
+        - name: Debug influx auth create output
+          debug:
+            msg:
+              - "influx auth create rc={{ create_grafana_token.rc }}"
+              - "stdout={{ create_grafana_token.stdout | default('') }}"
+              - "stderr={{ create_grafana_token.stderr | default('') }}"
+          when: create_grafana_token is defined
+
         - name: Read Grafana token file
           shell: cat {{ user_home.stdout }}/raspi-iot/influxdb/grafana.token
           register: grafana_token_file_content
           become_user: "{{ ansible_user_id }}"
+
+        - name: Debug Grafana token file content
+          debug:
+            msg:
+              - "grafana.token length={{ grafana_token_file_content.stdout | trim | length }}"
+              - "grafana.token preview={{ grafana_token_file_content.stdout | trim }}"
 
         - name: Fail if token is empty
           fail:
