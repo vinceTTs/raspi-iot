@@ -39,7 +39,7 @@
 
     - name: Create certificates directory
       file:
-        path: "{{ user_home.stdout }}/local/certs"
+        path: "{{ user_home.stdout }}/raspi-iot/certs"
         state: directory
         mode: '0755'
         owner: "{{ ansible_user_id }}"
@@ -47,33 +47,38 @@
 
     - name: Check if CA certificate exists
       stat:
-        path: "{{ user_home.stdout }}/local/certs/ca.crt"
+        path: "{{ user_home.stdout }}/raspi-iot/certs/ca.crt"
       register: ca_cert
 
     - name: Create node-red directory
       file:
-        path: "{{ user_home.stdout }}/local/node-red"
+        path: "{{ user_home.stdout }}/raspi-iot/node-red"
         state: directory
+        mode: '0777'
 
     - name: Create grafana directory
       file:
-        path: "{{ user_home.stdout }}/local/grafana"
+        path: "{{ user_home.stdout }}/raspi-iot/grafana"
         state: directory
+        mode: '0777'
 
     - name: Create influxdb directory
       file:
-        path: "{{ user_home.stdout }}/local/influxdb"
+        path: "{{ user_home.stdout }}/raspi-iot/influxdb"
         state: directory
+        mode: '0777'
 
     - name: Create mosquitto data directory
       file:
-        path: "{{ user_home.stdout }}/local/mosquitto/data"
+        path: "{{ user_home.stdout }}/raspi-iot/mosquitto/data"
         state: directory
+        mode: '0777'
 
     - name: Create mosquitto log directory
       file:
-        path: "{{ user_home.stdout }}/local/mosquitto/log"
+        path: "{{ user_home.stdout }}/raspi-iot/mosquitto/log"
         state: directory
+        mode: '0777'
 
     - name: Generate CA key and certificate
       shell: |
@@ -81,7 +86,7 @@
         openssl req -new -x509 -key ca.key -out ca.crt -days 3650 -subj "/CN=Mosquitto CA"
       when: not ca_cert.stat.exists
       args:
-        chdir: "{{ user_home.stdout }}/local/certs"
+        chdir: "{{ user_home.stdout }}/raspi-iot/certs"
       become_user: "{{ ansible_user_id }}"
 
     - name: Generate server certificate
@@ -91,12 +96,12 @@
         openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out server.crt -days 3650 -sha256
       when: not ca_cert.stat.exists
       args:
-        chdir: "{{ user_home.stdout }}/local/certs"
+        chdir: "{{ user_home.stdout }}/raspi-iot/certs"
       become_user: "{{ ansible_user_id }}"
 
     - name: Set certificate permissions
       file:
-        path: "{{ user_home.stdout }}/local/certs"
+        path: "{{ user_home.stdout }}/raspi-iot/certs"
         recurse: yes
         mode: '0644'
       when: not ca_cert.stat.exists
@@ -140,12 +145,12 @@
       block:
         - name: Wait for grafana.token from init script
           wait_for:
-            path: "{{ user_home.stdout }}/local/influxdb/grafana.token"
+            path: "{{ user_home.stdout }}/raspi-iot/influxdb/grafana.token"
             timeout: 120
           become_user: "{{ ansible_user_id }}"
 
         - name: Read Grafana token file
-          shell: cat {{ user_home.stdout }}/local/influxdb/grafana.token
+          shell: cat {{ user_home.stdout }}/raspi-iot/influxdb/grafana.token
           register: grafana_token_file_content
           become_user: "{{ ansible_user_id }}"
 
