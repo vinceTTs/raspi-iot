@@ -10,8 +10,6 @@ LOG_FILE="/var/lib/influxdb2/init.log"
 	echo "=== Starting Grafana token creation script ==="
 	echo "Token file location: $TOKEN_FILE"
 	echo "Current working directory: $(pwd)"
-	echo "InfluxDB data directory contents:"
-	ls -la /var/lib/influxdb2/ || echo "Directory not accessible yet"
 	
 	# Wait for InfluxDB to be ready
 	echo "Waiting for InfluxDB API..."
@@ -30,12 +28,42 @@ LOG_FILE="/var/lib/influxdb2/init.log"
 	
 	echo "InfluxDB API is ready!"
 	
-	# Create new token
+	# Create new token with authentication
 	echo "Creating new token for $USECASE..."
-	TOKEN=$(influx auth create --org home --read-buckets --description "$USECASE-read" --json 2>&1 | jq -r '.token' 2>/dev/null || echo "")
+	
+	# Export credentials for influx CLI
+	export INFLUXDB_HOST="http://localhost:8086"
+	export INFLUXDB_USERNAME="admin"
+	export INFLUXDB_PASSWORD="admin123"
+	export INFLUXDB_ORG="home"
+	
+	TOKEN=$(influx auth create \
+		--org home \
+		--username admin \
+		--password admin123 \
+		--read-buckets \
+		--description "$USECASE-read" \
+		--json 2>&1 | jq -r '.token' 2>/dev/null || echo "")
+	
+	echo "Token creation output: $TOKEN"
 	
 	if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
-		echo "ERROR: Failed to create token. Response was empty or null."
+		echo "ERROR: Failed to create token. Response was: $TOKEN"
+		echo "Trying alternative auth method..."
+		# Try with host flag
+		TOKEN=$(influx auth create \
+			--host http://localhost:8086 \
+			--org home \
+			--username admin \
+			--password admin123 \
+			--read-buckets \
+			--description "$USECASE-read" \
+			--json 2>&1 | jq -r '.token' 2>/dev/null || echo "")
+		echo "Alternative method result: $TOKEN"
+	fi
+	
+	if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+		echo "ERROR: Still failed to create token"
 		exit 1
 	fi
 	
@@ -44,7 +72,9 @@ LOG_FILE="/var/lib/influxdb2/init.log"
 	
 	if [ -f "$TOKEN_FILE" ]; then
 		echo "SUCCESS: Token file created at $TOKEN_FILE"
-		echo "Token file size: $(stat -f%z "$TOKEN_FILE" 2>/dev/null || stat -c%s "$TOKEN_FILE" 2>/dev/null || echo 'unknown') bytes"
+		FILE_SIZE=$(stat -c%s "$TOKEN_FILE" 2>/dev/null || stat -f%z "$TOKEN_FILE" 2>/dev/null || echo 'unknown')
+		echo "Token file size: $FILE_SIZE bytes"
+		echo "Token content (first 30 chars): $(head -c 30 "$TOKEN_FILE")"
 	else
 		echo "ERROR: Failed to create token file!"
 		exit 1
