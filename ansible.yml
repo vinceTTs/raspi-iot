@@ -1,0 +1,32 @@
+---
+- name: Install Docker and Docker-Compose on Raspberry Pi 3
+  hosts: all
+  become: yes
+
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install Docker and Docker-Compose
+      apt:
+        name:
+          - docker.io
+          - docker-compose
+        state: present
+
+    - name: Start and enable Docker service
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Add current user to docker group
+      user:
+        name: "{{ ansible_user_id }}"
+        groups: docker
+        append: yes
+
+    - name: Display success message
+      debug:
+        msg: "Docker and Docker-Compose installed successfully! Please re-login for group changes to take effect."
