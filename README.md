@@ -12,18 +12,30 @@ Automatisierte Installation von Docker und Docker-Compose auf Raspberry Pi 3 mit
 
 ### Lokale Installation (direkt auf dem Raspberry Pi)
 
-1. **Repository auf den Raspberry Pi kopieren:**
+1. **GitHub CLI installieren:**
    ```bash
-   git clone <repository-url> raspi-iot
+   sudo apt update
+   sudo apt install -y gh
+   ```
+
+2. **Bei GitHub authentifizieren:**
+   ```bash
+   gh auth login
+   ```
+   Folge den Anweisungen im Terminal (wähle GitHub.com, HTTPS, und authentifiziere dich)
+
+3. **Repository klonen:**
+   ```bash
+   gh repo clone <username>/raspi-iot
    cd raspi-iot
-   ```
-
-2. **Setup-Script ausführbar machen:**
+6. **Nach der Installation neu einloggen:**
    ```bash
-   chmod +x setup.sh
+   exit
+   # Neu einloggen via SSH oder Console
    ```
 
-3. **Setup starten:**
+7
+5. **Setup starten:**
    ```bash
    ./setup.sh
    ```
@@ -39,6 +51,17 @@ Automatisierte Installation von Docker und Docker-Compose auf Raspberry Pi 3 mit
    docker --version
    docker-compose --version
    ```
+
+### Alternative: Installation ohne GitHub CLI
+
+Falls du das Repository bereits heruntergeladen hast oder git verwenden möchtest:
+
+```bash
+git clone <repository-url> raspi-iot
+cd raspi-iot
+chmod +x setup.sh
+./setup.sh
+```
 
 ### Manuelle Installation
 
