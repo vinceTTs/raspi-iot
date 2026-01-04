@@ -57,6 +57,7 @@ services:
       - DOCKER_INFLUXDB_INIT_PASSWORD=admin123
       - DOCKER_INFLUXDB_INIT_ORG=home
       - DOCKER_INFLUXDB_INIT_BUCKET=sensors
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=raspi-admin-token
       - INFLUXB_MONITOR_STORE_ENABLED=true
     restart: unless-stopped
 

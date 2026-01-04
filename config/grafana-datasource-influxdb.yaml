@@ -11,6 +11,5 @@ datasources:
       defaultBuckets: sensors
       tlsSkipVerify: false
     secureJsonData:
-      basicAuthPassword: admin123
-    basicAuth: true
-    basicAuthUser: admin
+      token: raspi-admin-token
+    basicAuth: false
