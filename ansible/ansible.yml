@@ -156,6 +156,7 @@
             echo "=== Creating token: $DESC ===" >&2
 
             J=$(influx auth create -o home $PERM -d "$DESC" --json 2>/dev/null || true)
+            echo -n "$J" > "$FILE.json"
 
             echo "RAW_JSON_$DESC: $J" >&2
 
