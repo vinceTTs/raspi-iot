@@ -2,6 +2,8 @@
 - name: Install Docker and Docker-Compose on Raspberry Pi 3
   hosts: all
   become: yes
+  vars:
+    influx_admin_token: "{{ lookup('env','INFLUX_ADMIN_TOKEN') | default('raspi-admin-token', true) }}"
 
   tasks:
     - name: Update apt cache and upgrade system
@@ -133,9 +135,20 @@
       changed_when: false
       become_user: "{{ ansible_user_id }}"
 
+    - name: Validate admin token can list authorizations
+      shell: |
+        docker exec -e INFLUX_TOKEN={{ influx_admin_token }} influxdb sh -lc '
+          influx auth list --org home --json >/dev/null 2>&1
+        '
+      args:
+        chdir: "{{ user_home.stdout }}\/raspi-iot"
+      register: auth_list_check
+      changed_when: false
+      failed_when: auth_list_check.rc != 0
+
     - name: Create Grafana read token and Telegraf write token (debuggable)
       shell: |
-        docker exec -e INFLUX_TOKEN=raspi-admin-token influxdb sh -lc '
+        docker exec -e INFLUX_TOKEN={{ influx_admin_token }} influxdb sh -lc '
           create_or_get() {
             DESC="$1"; PERM="$2"; FILE="$3";
 
