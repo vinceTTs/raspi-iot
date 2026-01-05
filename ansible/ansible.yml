@@ -135,16 +135,17 @@
       changed_when: false
       become_user: "{{ ansible_user_id }}"
 
-    - name: Validate admin token can list authorizations
+    - name: Validate admin token can list authorizations and write output
       shell: |
         docker exec -e INFLUX_TOKEN={{ influx_admin_token }} influxdb sh -lc '
-          influx auth list --org home --json >/dev/null 2>&1
+          influx auth list --org home --json > /var/lib/influxdb2/auth-list.json 2>&1
         '
       args:
-        chdir: "{{ user_home.stdout }}\/raspi-iot"
+        chdir: "{{ user_home.stdout }}/raspi-iot"
       register: auth_list_check
       changed_when: false
       failed_when: auth_list_check.rc != 0
+
 
     - name: Create Grafana read token and Telegraf write token (debuggable)
       shell: |
