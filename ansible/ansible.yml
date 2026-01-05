@@ -4,16 +4,11 @@
   become: yes
 
   tasks:
-    - name: Update apt cache
+    - name: apt update, upgrade and install
       apt:
         update_cache: yes
-
-    - name: Upgrade packages (safe)
-      apt:
+        cache_valid_time: 3600
         upgrade: safe
-
-    - name: Install Docker and Docker-Compose
-      apt:
         name:
           - docker.io
           - docker-compose
@@ -50,40 +45,22 @@
         path: "{{ user_home.stdout }}/raspi-iot/certs/ca.crt"
       register: ca_cert
 
-    - name: Create node-red directory
+    - name: Create service directories
       file:
-        path: "{{ user_home.stdout }}/raspi-iot/node-red"
+        path: "{{ user_home.stdout }}/raspi-iot/{{ item }}"
         state: directory
         mode: '0777'
-
-    - name: Create grafana directory
-      file:
-        path: "{{ user_home.stdout }}/raspi-iot/grafana"
-        state: directory
-        mode: '0777'
-
-    - name: Create influxdb directory
-      file:
-        path: "{{ user_home.stdout }}/raspi-iot/influxdb"
-        state: directory
-        mode: '0777'
-
-    - name: Create mosquitto data directory
-      file:
-        path: "{{ user_home.stdout }}/raspi-iot/mosquitto/data"
-        state: directory
-        mode: '0777'
-
-    - name: Create mosquitto log directory
-      file:
-        path: "{{ user_home.stdout }}/raspi-iot/mosquitto/log"
-        state: directory
-        mode: '0777'
+      loop:
+        - node-red
+        - grafana
+        - influxdb
+        - mosquitto/data
+        - mosquitto/log
 
     - name: Generate CA key and certificate
       shell: |
         openssl genrsa -out ca.key 2048
-        openssl req -new -x509 -key ca.key -out ca.crt -days 3650 -subj "/CN=Mosquitto CA"
+        openssl req -new -x509 -key ca.key -out ca.crt -subj "/CN=Mosquitto CA"
       when: not ca_cert.stat.exists
       args:
         chdir: "{{ user_home.stdout }}/raspi-iot/certs"
@@ -134,10 +111,10 @@
         enabled: yes
         daemon_reload: yes
 
-    - name: Ensure docker-compose is running with latest config
+    - name: Start InfluxDB only
       shell: |
         cd {{ user_home.stdout }}/raspi-iot
-        docker-compose up -d
+        docker-compose up -d influxdb
       become_user: "{{ ansible_user_id }}"
       changed_when: false
 
@@ -220,17 +197,10 @@
         content: "INFLUX_TOKEN={{ (telegraf_token.content | b64decode) | trim }}\n"
         mode: '0600'
 
-    - name: Restart Grafana to apply new datasource token
+    - name: Start remaining services
       shell: |
         cd {{ user_home.stdout }}/raspi-iot
-        docker-compose up -d grafana
-      become_user: "{{ ansible_user_id }}"
-      when: grafana_token is defined
-
-    - name: Restart Telegraf to apply new token
-      shell: |
-        cd {{ user_home.stdout }}/raspi-iot
-        docker-compose up -d telegraf
+        docker-compose up -d
       become_user: "{{ ansible_user_id }}"
 
     - name: Display success message
