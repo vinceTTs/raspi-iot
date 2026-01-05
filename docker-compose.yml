@@ -50,7 +50,6 @@ services:
     volumes:
       - ./influxdb:/var/lib/influxdb2
       - ./scripts:/scripts:ro
-      # - ./scripts/influxdb-create-token-grafana.sh:/docker-entrypoint-initdb.d/create-token-grafana.sh
     environment:
       - DOCKER_INFLUXDB_INIT_MODE=setup
       - DOCKER_INFLUXDB_INIT_USERNAME=admin
