@@ -114,10 +114,10 @@
         enabled: yes
         daemon_reload: yes
 
-    - name: Start nginx and InfluxDB only
+    - name: Start InfluxDB only
       shell: |
         cd {{ user_home.stdout }}/raspi-iot
-        docker-compose up -d nginx influxdb
+        docker-compose up -d influxdb
       become_user: "{{ ansible_user_id }}"
       changed_when: false
 
