@@ -160,7 +160,7 @@
 
             echo "RAW_JSON_$DESC: $J" >&2
 
-            TOK=$(echo "$J" | jq -r '.token'")
+            TOK=$(echo "$J" | jq -r '.token')
 
             if [ -z "$TOK" ]; then
               echo "Token not created, checking existing…" >&2
