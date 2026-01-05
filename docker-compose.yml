@@ -36,8 +36,8 @@ services:
         condition: service_healthy
       mosquitto:
         condition: service_started
-    env_file:
-      - ./influxdb/telegraf.env
+    environment:
+      - INFLUX_TOKEN=${TELEGRAF_INFLUX_TOKEN:-}
     restart: unless-stopped
 
   influxdb:

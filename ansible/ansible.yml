@@ -188,16 +188,10 @@
         msg: "telegraf-write.token is empty. Ensure admin token is valid and Influx CLI supports --write-buckets."
       when: (telegraf_token.content | b64decode | trim) | length == 0
 
-    - name: Write Telegraf env file with token
-      file:
-        path: "{{ user_home.stdout }}/raspi-iot/influxdb"
-        state: directory
-        mode: '0777'
-
-    - name: Write Telegraf env file with token
+    - name: Write project .env with Telegraf token
       copy:
-        dest: "{{ user_home.stdout }}/raspi-iot/influxdb/telegraf.env"
-        content: "INFLUX_TOKEN={{ (telegraf_token.content | b64decode) | trim }}\n"
+        dest: "{{ user_home.stdout }}/raspi-iot/.env"
+        content: "TELEGRAF_INFLUX_TOKEN={{ (telegraf_token.content | b64decode) | trim }}\n"
         mode: '0600'
 
     - name: Start remaining services
