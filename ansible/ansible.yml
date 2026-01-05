@@ -159,7 +159,14 @@
             echo -n "$J" > "$FILE.json"
             J=$(echo "$J" | tr -d "\n")
             echo -n "$J" > "$FILE.json2"
-            TOK=$(echo "$J" | sed -n "s/.*\"token\":\"\([^\"]\+\)\".*/\1/p")
+            # Portable sed regex: avoid +; use * for zero-or-more
+            TOK=$(echo "$J" | sed -n "s/.*\"token\":\"\([^\"]*\)\".*/\1/p")
+            echo -n "$TOK" > "$FILE.tok1"
+            # Fallback: parse token from auth list by description if create output lacked token
+            if [ -z "$TOK" ]; then
+              L=$(influx auth list --org home --json | tr -d "\n")
+              TOK=$(echo "$L" | sed -n "s/.*\"description\":\"$DESC\"[^}]*\"token\":\"\([^\"]*\)\".*/\1/p")
+            fi
             echo -n "$TOK" > "$FILE"
           }
 
