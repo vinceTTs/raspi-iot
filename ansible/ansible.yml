@@ -163,20 +163,7 @@
     - name: Create Grafana read-only token for all buckets (simplified)
       shell: |
         docker exec -e INFLUX_TOKEN=raspi-admin-token influxdb sh -lc '
-          ORG_ID=$(influx org list | awk "NR>1 && $2==\"home\" {print $1; exit}");
-          cat > /tmp/payload.json <<EOF
-          {"orgID":"$ORG_ID","description":"grafana","permissions":[{"action":"read","resource":{"type":"buckets","orgID":"$ORG_ID"}}]}
-          EOF
-          curl -sS -X POST http://localhost:8086/api/v2/authorizations \
-            -H "Authorization: Token $INFLUX_TOKEN" \
-            -H "Content-Type: application/json" \
-            --data @/tmp/payload.json \
-            -w "%{http_code}" -o /var/lib/influxdb2/grafana-auth.json \
-            > /var/lib/influxdb2/grafana-auth.status;
-          CODE=$(cat /var/lib/influxdb2/grafana-auth.status || echo "");
-          if [ "$CODE" != "201" ] && [ "$CODE" != "200" ]; then
-            echo "{\"error\":\"authorization creation failed\",\"status\":\"$CODE\"}" > /var/lib/influxdb2/grafana-auth.json;
-          fi
+          influx auth create -o home --read-buckets -d grafana-read --json > /var/lib/influxdb2/grafana-auth.json
         '
       args:
         chdir: "{{ user_home.stdout }}/raspi-iot"
@@ -196,6 +183,11 @@
       slurp:
         src: "{{ user_home.stdout }}/raspi-iot/influxdb/grafana-auth.json"
       register: grafana_auth
+
+    - name: Fail if token is missing in grafana-auth.json
+      fail:
+        msg: "Token missing in grafana-auth.json. Ensure admin token is valid and Influx CLI supports --read-buckets."
+      when: (grafana_auth.content | b64decode | from_json).token is not defined
 
     - name: Extract token and write to file
       copy:
