@@ -17,7 +17,6 @@
         name:
           - docker.io
           - docker-compose
-          - jq
         state: present
 
     - name: Start and enable Docker service
@@ -158,7 +157,9 @@
 
             J=$(influx auth create -o home $PERM -d "$DESC" --json 2>/dev/null || true)
             echo -n "$J" > "$FILE.json"
-            TOK=$(echo "$J" | jq -r '.token')
+            J=$(echo "$J" | tr -d "\n")
+            echo -n "$J" > "$FILE.json2"
+            TOK=$(echo "$J" | sed -n "s/.*\"token\":\"\([^\"]\+\)\".*/\1/p")
             echo -n "$TOK" > "$FILE"
           }
 
