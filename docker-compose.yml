@@ -34,8 +34,6 @@ services:
     depends_on:
       influxdb:
         condition: service_healthy
-      setup-telegraf-token:
-        condition: service_completed_successfully
       mosquitto:
         condition: service_started
     env_file:
@@ -65,23 +63,7 @@ services:
       retries: 30
     restart: unless-stopped
 
-  setup-telegraf-token:
-    image: influxdb:2.7
-    container_name: setup-telegraf-token
-    depends_on:
-      influxdb:
-        condition: service_healthy
-    environment:
-      - INFLUX_TOKEN=raspi-admin-token
-    entrypoint: ["/bin/sh", "-lc"]
-    command: >
-      "if [ -s /out/telegraf.env ]; then exit 0; fi;
-      influx ping --host http://influxdb:8086;
-      TOKEN=$(influx auth create -o home --write-buckets -d telegraf-write --json | sed -n 's/.*\"token\":\"\([^\"]\+\)\".*/\1/p');
-      if [ -n \"$TOKEN\" ]; then echo \"INFLUX_TOKEN=$TOKEN\" > /out/telegraf.env; else exit 1; fi"
-    volumes:
-      - ./influxdb:/out
-    restart: "no"
+
 
   grafana:
     image: grafana/grafana:latest
