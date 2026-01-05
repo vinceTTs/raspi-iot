@@ -27,10 +27,6 @@ services:
   telegraf:
     image: telegraf:latest
     container_name: telegraf
-    entrypoint: ["/bin/bash", "-c"]
-    command: >
-      "/init/scripts/influxdb-create-token-telegraf.sh &&
-      telegraf"
     volumes:
       - ./config/telegraf.conf:/etc/telegraf/telegraf.conf
       - ./certs:/etc/telegraf/certs
@@ -38,8 +34,8 @@ services:
     depends_on:
       - mosquitto
       - influxdb
-    environment:
-      - INFLUX_TOKEN_FILE=/run/secrets/telegraf.token
+    env_file:
+      - ./influxdb/telegraf.env
     restart: unless-stopped
 
   influxdb:
