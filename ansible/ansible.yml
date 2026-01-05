@@ -17,6 +17,7 @@
         name:
           - docker.io
           - docker-compose
+          - jq
         state: present
 
     - name: Start and enable Docker service
