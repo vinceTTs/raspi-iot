@@ -133,65 +133,69 @@
       changed_when: false
       become_user: "{{ ansible_user_id }}"
 
-    - name: Create Grafana read-only token and persist (single step)
+    - name: Create Grafana read token and Telegraf write token (debuggable)
       shell: |
         docker exec -e INFLUX_TOKEN=raspi-admin-token influxdb sh -lc '
-          TOK=$(influx auth list --org home | awk "NR>1 && $2==\"grafana-read\"{print $3; exit}");
-          if [ -z "$TOK" ]; then
-            influx auth create -o home --read-buckets -d grafana-read >/dev/null 2>&1 || true;
-            TOK=$(influx auth list --org home | awk "NR>1 && $2==\"grafana-read\"{print $3; exit}");
-          fi;
-          if [ -n "$TOK" ]; then echo "$TOK" > /var/lib/influxdb2/grafana-read.token; else echo "" > /var/lib/influxdb2/grafana-read.token; fi
+          create_or_get() {
+            DESC="$1"; PERM="$2"; FILE="$3";
+
+            echo "=== Creating token: $DESC ===" >&2
+
+            J=$(influx auth create -o home $PERM -d "$DESC" --json 2>/dev/null || true)
+
+            echo "RAW_JSON_$DESC: $J" >&2
+
+            TOK=$(echo "$J" | sed -n "s/.*\"token\":\"\([^\"]\+\)\".*/\1/p")
+
+            if [ -z "$TOK" ]; then
+              echo "Token not created, checking existing…" >&2
+              L=$(influx auth list --org home --json | tr -d "\n")
+              echo "LIST_JSON_$DESC: $L" >&2
+              TOK=$(echo "$L" | sed -n "s/.*\"description\":\"$DESC\"[^}]*\"token\":\"\([^\"]\+\)\".*/\1/p")
+            fi
+
+            echo "FINAL_TOKEN_$DESC: $TOK" >&2
+
+            echo -n "$TOK" > "$FILE"
+          }
+
+          create_or_get grafana-read "--read-buckets" /var/lib/influxdb2/grafana-read.token
+          create_or_get telegraf-write "--write-buckets" /var/lib/influxdb2/telegraf-write.token
         '
+      register: token_creation_output
       args:
         chdir: "{{ user_home.stdout }}/raspi-iot"
       become_user: "{{ ansible_user_id }}"
 
-    - name: Slurp grafana-read.token
+    - name: Slurp InfluxDB tokens
       slurp:
-        src: "{{ user_home.stdout }}/raspi-iot/influxdb/grafana-read.token"
-      register: grafana_token
+        src: "{{ user_home.stdout }}/raspi-iot/influxdb/{{ item }}"
+      loop:
+        - grafana-read.token
+        - telegraf-write.token
+      register: slurped_tokens
 
-    - name: Fail if grafana-read.token is empty
+    - name: Fail if any token is empty
       fail:
-        msg: "grafana-read.token is empty. Ensure admin token is valid and Influx CLI supports --read-buckets."
-      when: (grafana_token.content | b64decode | trim) | length == 0
+        msg: "Token {{ item.item }} is empty. Check admin token or Influx CLI permissions."
+      when: (item.content | b64decode | trim) | length == 0
+      loop: "{{ slurped_tokens.results }}"
 
-    - name: Update Grafana datasource to use read-only token
+    - name: Extract decoded tokens
+      set_fact:
+        grafana_token: "{{ slurped_tokens.results[0].content | b64decode | trim }}"
+        telegraf_token: "{{ slurped_tokens.results[1].content | b64decode | trim }}"
+
+    - name: Update Grafana datasource token
       lineinfile:
         path: "{{ user_home.stdout }}/raspi-iot/config/grafana-datasource-influxdb.yaml"
         regexp: '^\s*token:\s*.*$'
-        line: '      token: {{ (grafana_token.content | b64decode) | trim }}'
-      when: grafana_token is defined
-
-    - name: Create Telegraf write token and persist (single step)
-      shell: |
-        docker exec -e INFLUX_TOKEN=raspi-admin-token influxdb sh -lc '
-          TOK=$(influx auth list --org home | awk "NR>1 && $2==\"telegraf-write\"{print $3; exit}");
-          if [ -z "$TOK" ]; then
-            influx auth create -o home --write-buckets -d telegraf-write >/dev/null 2>&1 || true;
-            TOK=$(influx auth list --org home | awk "NR>1 && $2==\"telegraf-write\"{print $3; exit}");
-          fi;
-          if [ -n "$TOK" ]; then echo "$TOK" > /var/lib/influxdb2/telegraf-write.token; else echo "" > /var/lib/influxdb2/telegraf-write.token; fi
-        '
-      args:
-        chdir: "{{ user_home.stdout }}/raspi-iot"
-      become_user: "{{ ansible_user_id }}"
-
-    - name: Slurp telegraf-write.token
-      slurp:
-        src: "{{ user_home.stdout }}/raspi-iot/influxdb/telegraf-write.token"
-      register: telegraf_token
-
-    - name: Fail if telegraf-write.token is empty
-      fail:
-        msg: "telegraf-write.token is empty. Ensure admin token is valid and Influx CLI supports --write-buckets."
-      when: (telegraf_token.content | b64decode | trim) | length == 0
+        line: "      token: {{ grafana_token }}"
 
     - name: Write project .env with Telegraf token
       copy:
         dest: "{{ user_home.stdout }}/raspi-iot/.env"
-        content: "TELEGRAF_INFLUX_TOKEN={{ (telegraf_token.content | b64decode) | trim }}\n"
+        content: "TELEGRAF_INFLUX_TOKEN={{ telegraf_token }}\n"
         mode: '0600'
 
     - name: Start remaining services
