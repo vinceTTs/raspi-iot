@@ -147,36 +147,76 @@
       failed_when: auth_list_check.rc != 0
 
 
-    - name: Create Grafana read token and Telegraf write token (debuggable)
+    - name: Create Grafana read token (JSON)
       shell: |
-        docker exec -e INFLUX_TOKEN={{ influx_admin_token }} influxdb sh -lc '
-          create_or_get() {
-            DESC="$1"; PERM="$2"; FILE="$3";
-
-            echo "=== Creating token: $DESC ===" >&2
-
-            J=$(influx auth create -o home $PERM -d "$DESC" --json 2>/dev/null || true)
-            echo -n "$J" > "$FILE.json"
-            J=$(echo "$J" | tr -d "\n")
-            echo -n "$J" > "$FILE.json2"
-            # Portable sed regex: avoid +; use * for zero-or-more
-            TOK=$(echo "$J" | sed -n "s/.*\"token\":\"\([^\"]*\)\".*/\1/p")
-            echo -n "$TOK" > "$FILE.tok1"
-            # Fallback: parse token from auth list by description if create output lacked token
-            if [ -z "$TOK" ]; then
-              L=$(influx auth list --org home --json | tr -d "\n")
-              TOK=$(echo "$L" | sed -n "s/.*\"description\":\"$DESC\"[^}]*\"token\":\"\([^\"]*\)\".*/\1/p")
-            fi
-            echo -n "$TOK" > "$FILE"
-          }
-
-          create_or_get grafana-read "--read-buckets" /var/lib/influxdb2/grafana-read.token
-          create_or_get telegraf-write "--write-buckets" /var/lib/influxdb2/telegraf-write.token
-        '
-      register: token_creation_output
+        docker exec -e INFLUX_TOKEN={{ influx_admin_token }} influxdb \
+          influx auth create -o home --read-buckets -d grafana-read --json
       args:
         chdir: "{{ user_home.stdout }}/raspi-iot"
+      register: grafana_create
+      changed_when: false
       become_user: "{{ ansible_user_id }}"
+
+    - name: Extract Grafana token from create JSON
+      set_fact:
+        grafana_token: "{{ (grafana_create.stdout | default('') | trim | from_json).token | default('') }}"
+      when: grafana_create.stdout is defined and (grafana_create.stdout | trim) | length > 0
+
+    - name: Fallback list authorizations for Grafana token
+      shell: |
+        docker exec -e INFLUX_TOKEN={{ influx_admin_token }} influxdb \
+          influx auth list --org home --json
+      args:
+        chdir: "{{ user_home.stdout }}/raspi-iot"
+      register: grafana_list
+      changed_when: false
+      become_user: "{{ ansible_user_id }}"
+      when: grafana_token | default('') | length == 0
+
+    - name: Set Grafana token from list JSON
+      set_fact:
+        grafana_token: "{{ (grafana_list.stdout | default('[]') | from_json | selectattr('description','equalto','grafana-read') | map(attribute='token') | list | first | default('')) }}"
+      when: grafana_token | default('') | length == 0
+
+    - name: Create Telegraf write token (JSON)
+      shell: |
+        docker exec -e INFLUX_TOKEN={{ influx_admin_token }} influxdb \
+          influx auth create -o home --write-buckets -d telegraf-write --json
+      args:
+        chdir: "{{ user_home.stdout }}/raspi-iot"
+      register: telegraf_create
+      changed_when: false
+      become_user: "{{ ansible_user_id }}"
+
+    - name: Extract Telegraf token from create JSON
+      set_fact:
+        telegraf_token: "{{ (telegraf_create.stdout | default('') | trim | from_json).token | default('') }}"
+      when: telegraf_create.stdout is defined and (telegraf_create.stdout | trim) | length > 0
+
+    - name: Fallback list authorizations for Telegraf token
+      shell: |
+        docker exec -e INFLUX_TOKEN={{ influx_admin_token }} influxdb \
+          influx auth list --org home --json
+      args:
+        chdir: "{{ user_home.stdout }}/raspi-iot"
+      register: telegraf_list
+      changed_when: false
+      become_user: "{{ ansible_user_id }}"
+      when: telegraf_token | default('') | length == 0
+
+    - name: Set Telegraf token from list JSON
+      set_fact:
+        telegraf_token: "{{ (telegraf_list.stdout | default('[]') | from_json | selectattr('description','equalto','telegraf-write') | map(attribute='token') | list | first | default('')) }}"
+      when: telegraf_token | default('') | length == 0
+
+    - name: Write tokens into host volume (mapped to /var/lib/influxdb2)
+      copy:
+        dest: "{{ user_home.stdout }}/raspi-iot/influxdb/{{ item.name }}.token"
+        content: "{{ item.value }}"
+        mode: '0600'
+      loop:
+        - { name: 'grafana-read', value: "{{ grafana_token }}" }
+        - { name: 'telegraf-write', value: "{{ telegraf_token }}" }
 
     - name: Slurp InfluxDB tokens
       slurp:
