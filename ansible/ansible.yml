@@ -209,6 +209,12 @@
       when: (telegraf_token.content | b64decode | trim) | length == 0
 
     - name: Write Telegraf env file with token
+      file:
+        path: "{{ user_home.stdout }}/raspi-iot/influxdb"
+        state: directory
+        mode: '0777'
+
+    - name: Write Telegraf env file with token
       copy:
         dest: "{{ user_home.stdout }}/raspi-iot/influxdb/telegraf.env"
         content: "INFLUX_TOKEN={{ (telegraf_token.content | b64decode) | trim }}\n"
