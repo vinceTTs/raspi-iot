@@ -158,20 +158,7 @@
 
             J=$(influx auth create -o home $PERM -d "$DESC" --json 2>/dev/null || true)
             echo -n "$J" > "$FILE.json"
-
-            echo "RAW_JSON_$DESC: $J" >&2
-
             TOK=$(echo "$J" | jq -r '.token')
-
-            if [ -z "$TOK" ]; then
-              echo "Token not created, checking existing…" >&2
-              L=$(influx auth list --org home --json | tr -d "\n")
-              echo "LIST_JSON_$DESC: $L" >&2
-              TOK=$(echo "$L" | sed -n "s/.*\"description\":\"$DESC\"[^}]*\"token\":\"\([^\"]\+\)\".*/\1/p")
-            fi
-
-            echo "FINAL_TOKEN_$DESC: $TOK" >&2
-
             echo -n "$TOK" > "$FILE"
           }
 
