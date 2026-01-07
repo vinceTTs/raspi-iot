@@ -2,6 +2,7 @@ apiVersion: 1
 
 datasources:
   - name: InfluxDB
+    uid: influxdb
     type: influxdb
     access: proxy
     url: http://influxdb:8086
@@ -13,3 +14,4 @@ datasources:
     secureJsonData:
       token: raspi-admin-token
     basicAuth: false
+    isDefault: true
