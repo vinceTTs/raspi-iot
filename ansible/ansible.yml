@@ -81,12 +81,22 @@
         chdir: "{{ user_home.stdout }}/raspi-iot/certs"
       become_user: "{{ ansible_user_id }}"
 
-    - name: Set certificate permissions
+    - name: Ensure certs directory has correct permissions
       file:
         path: "{{ user_home.stdout }}/raspi-iot/certs"
-        recurse: yes
-        mode: '0644'
-      when: not ca_cert.stat.exists
+        state: directory
+        mode: '0755'
+      become_user: "{{ ansible_user_id }}"
+
+    - name: Set permissions on certificate files
+      file:
+        path: "{{ item.path }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - { path: "{{ user_home.stdout }}/raspi-iot/certs/ca.crt", mode: '0644' }
+        - { path: "{{ user_home.stdout }}/raspi-iot/certs/raspi.crt", mode: '0644' }
+        - { path: "{{ user_home.stdout }}/raspi-iot/certs/raspi.key", mode: '0600' }
+      when: item.path is file
       become_user: "{{ ansible_user_id }}"
 
     - name: Create systemd service for docker-compose
