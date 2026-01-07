@@ -81,6 +81,53 @@
         chdir: "{{ user_home.stdout }}/raspi-iot/certs"
       become_user: "{{ ansible_user_id }}"
 
+    - name: Check server certificate has SAN for mosquitto
+      shell: |
+        openssl x509 -in raspi.crt -noout -text | grep -q "DNS:mosquitto"
+      args:
+        chdir: "{{ user_home.stdout }}/raspi-iot/certs"
+      register: san_check
+      changed_when: false
+      failed_when: false
+
+    - name: Create OpenSSL config with SAN entries
+      copy:
+        dest: "{{ user_home.stdout }}/raspi-iot/certs/openssl.cnf"
+        content: |
+          [ req ]
+          default_bits        = 2048
+          prompt              = no
+          default_md          = sha256
+          req_extensions      = v3_req
+          distinguished_name  = req_distinguished_name
+
+          [ req_distinguished_name ]
+          CN = mosquitto
+
+          [ v3_req ]
+          subjectAltName = @alt_names
+
+          [ alt_names ]
+          DNS.1 = mosquitto
+          DNS.2 = raspi.local
+      when: san_check.rc != 0
+
+    - name: Regenerate server CSR with SAN
+      shell: |
+        openssl req -new -key raspi.key -out raspi.csr -config openssl.cnf -reqexts v3_req
+      args:
+        chdir: "{{ user_home.stdout }}/raspi-iot/certs"
+      when: san_check.rc != 0
+      become_user: "{{ ansible_user_id }}"
+
+    - name: Sign server certificate with SAN
+      shell: |
+        openssl x509 -req -in raspi.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out raspi.crt -days 3650 -sha256 -extensions v3_req -extfile openssl.cnf
+      args:
+        chdir: "{{ user_home.stdout }}/raspi-iot/certs"
+      when: san_check.rc != 0
+      become_user: "{{ ansible_user_id }}"
+
     - name: Ensure certs directory has correct permissions
       file:
         path: "{{ user_home.stdout }}/raspi-iot/certs"
