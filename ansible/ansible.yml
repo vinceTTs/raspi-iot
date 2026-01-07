@@ -203,6 +203,28 @@
       changed_when: false
       failed_when: auth_list_check.rc != 0
 
+    - name: Check existing token files
+      stat:
+        path: "{{ user_home.stdout }}/raspi-iot/influxdb/{{ item }}.token"
+      loop:
+        - grafana-read
+        - telegraf-write
+      register: token_file_stats
+
+    - name: Slurp existing tokens if present
+      slurp:
+        src: "{{ user_home.stdout }}/raspi-iot/influxdb/{{ item }}.token"
+      loop:
+        - grafana-read
+        - telegraf-write
+      when: token_file_stats.results[loop.index0].stat.exists
+      register: existing_tokens
+
+    - name: Set facts from existing tokens (if present)
+      set_fact:
+        grafana_token: "{{ (existing_tokens.results[0].content | default('') | b64decode | trim) if (token_file_stats.results[0].stat.exists) else (grafana_token | default('')) }}"
+        telegraf_token: "{{ (existing_tokens.results[1].content | default('') | b64decode | trim) if (token_file_stats.results[1].stat.exists) else (telegraf_token | default('')) }}"
+
 
     - name: Create Grafana read token (JSON)
       shell: |
@@ -213,11 +235,12 @@
       register: grafana_create
       changed_when: false
       become_user: "{{ ansible_user_id }}"
+      when: (grafana_token | default('')) | length == 0
 
     - name: Extract Grafana token from create JSON
       set_fact:
         grafana_token: "{{ (grafana_create.stdout | default('') | trim | from_json).token | default('') }}"
-      when: grafana_create.stdout is defined and (grafana_create.stdout | trim) | length > 0
+      when: (grafana_token | default('')) | length == 0 and grafana_create.stdout is defined and (grafana_create.stdout | trim) | length > 0
 
     - name: Fallback list authorizations for Grafana token
       shell: |
@@ -228,12 +251,12 @@
       register: grafana_list
       changed_when: false
       become_user: "{{ ansible_user_id }}"
-      when: grafana_token | default('') | length == 0
+      when: (grafana_token | default('')) | length == 0
 
     - name: Set Grafana token from list JSON
       set_fact:
         grafana_token: "{{ (grafana_list.stdout | default('[]') | from_json | selectattr('description','equalto','grafana-read') | map(attribute='token') | list | first | default('')) }}"
-      when: grafana_token | default('') | length == 0
+      when: (grafana_token | default('')) | length == 0
 
     - name: Create Telegraf write token (JSON)
       shell: |
@@ -244,11 +267,12 @@
       register: telegraf_create
       changed_when: false
       become_user: "{{ ansible_user_id }}"
+      when: (telegraf_token | default('')) | length == 0
 
     - name: Extract Telegraf token from create JSON
       set_fact:
         telegraf_token: "{{ (telegraf_create.stdout | default('') | trim | from_json).token | default('') }}"
-      when: telegraf_create.stdout is defined and (telegraf_create.stdout | trim) | length > 0
+      when: (telegraf_token | default('')) | length == 0 and telegraf_create.stdout is defined and (telegraf_create.stdout | trim) | length > 0
 
     - name: Fallback list authorizations for Telegraf token
       shell: |
@@ -259,12 +283,12 @@
       register: telegraf_list
       changed_when: false
       become_user: "{{ ansible_user_id }}"
-      when: telegraf_token | default('') | length == 0
+      when: (telegraf_token | default('')) | length == 0
 
     - name: Set Telegraf token from list JSON
       set_fact:
         telegraf_token: "{{ (telegraf_list.stdout | default('[]') | from_json | selectattr('description','equalto','telegraf-write') | map(attribute='token') | list | first | default('')) }}"
-      when: telegraf_token | default('') | length == 0
+      when: (telegraf_token | default('')) | length == 0
 
     - name: Write tokens into host volume (mapped to /var/lib/influxdb2)
       copy:

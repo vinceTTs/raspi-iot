@@ -11,6 +11,11 @@ services:
       - influxdb
       - node-red
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
 
   mosquitto:
     image: eclipse-mosquitto:2
@@ -23,6 +28,11 @@ services:
       - ./mosquitto/log:/mosquitto/log
       - ./certs:/mosquitto/config/certs
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "sh -c 'ps aux | grep -v grep | grep mosquitto >/dev/null' "]
+      interval: 30s
+      timeout: 5s
+      retries: 5
 
   telegraf:
     image: telegraf:latest
@@ -39,6 +49,11 @@ services:
     environment:
       - INFLUX_TOKEN=${TELEGRAF_INFLUX_TOKEN}
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "sh -c 'ps aux | grep -v grep | grep telegraf >/dev/null' "]
+      interval: 30s
+      timeout: 5s
+      retries: 5
 
   influxdb:
     image: influxdb:2.7
@@ -47,7 +62,6 @@ services:
       - "8086:8086"
     volumes:
       - ./influxdb:/var/lib/influxdb2
-      - ./scripts:/scripts:ro
     environment:
       - DOCKER_INFLUXDB_INIT_MODE=setup
       - DOCKER_INFLUXDB_INIT_USERNAME=admin
@@ -80,6 +94,11 @@ services:
     depends_on:
       - influxdb
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:3000/api/health || wget -qO- http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
 
   node-red:
     image: nodered/node-red:latest
@@ -91,4 +110,9 @@ services:
     depends_on:
       - mosquitto
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:1880/ || wget -qO- http://localhost:1880/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
 
