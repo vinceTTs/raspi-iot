@@ -211,19 +211,27 @@
         - telegraf-write
       register: token_file_stats
 
-    - name: Slurp existing tokens if present
+    - name: Slurp existing Grafana token if present
       slurp:
-        src: "{{ user_home.stdout }}/raspi-iot/influxdb/{{ item }}.token"
-      loop:
-        - grafana-read
-        - telegraf-write
-      when: token_file_stats.results[loop.index0].stat.exists
-      register: existing_tokens
+        src: "{{ user_home.stdout }}/raspi-iot/influxdb/grafana-read.token"
+      when: token_file_stats.results[0].stat.exists
+      register: grafana_token_slurp
 
-    - name: Set facts from existing tokens (if present)
+    - name: Set grafana_token from existing file
       set_fact:
-        grafana_token: "{{ (existing_tokens.results[0].content | default('') | b64decode | trim) if (token_file_stats.results[0].stat.exists) else (grafana_token | default('')) }}"
-        telegraf_token: "{{ (existing_tokens.results[1].content | default('') | b64decode | trim) if (token_file_stats.results[1].stat.exists) else (telegraf_token | default('')) }}"
+        grafana_token: "{{ grafana_token_slurp.content | b64decode | trim }}"
+      when: token_file_stats.results[0].stat.exists
+
+    - name: Slurp existing Telegraf token if present
+      slurp:
+        src: "{{ user_home.stdout }}/raspi-iot/influxdb/telegraf-write.token"
+      when: token_file_stats.results[1].stat.exists
+      register: telegraf_token_slurp
+
+    - name: Set telegraf_token from existing file
+      set_fact:
+        telegraf_token: "{{ telegraf_token_slurp.content | b64decode | trim }}"
+      when: token_file_stats.results[1].stat.exists
 
 
     - name: Create Grafana read token (JSON)
