@@ -233,9 +233,7 @@
       args:
         chdir: "{{ user_home.stdout }}/raspi-iot"
       register: ensure_network_bucket
-        changed_when: 'created' in ensure_network_bucket.stdout
-        changed_when: ensure_network_bucket.rc == 0
-        changed_when: ensure_network_bucket.stdout | search('created')
+      changed_when: "created" in ensure_network_bucket.stdout
 
     - name: Check existing token files
       stat:
