@@ -222,12 +222,20 @@
     - name: Ensure InfluxDB bucket "network" exists
       shell: |
         docker exec -e INFLUX_TOKEN={{ influx_admin_token }} influxdb sh -lc '
-          influx bucket list --org home --json | grep -q '"name":"network"' || influx bucket create -n network -o home -r 0
-        '
+            if influx bucket list --org home --json | grep -q "\"name\":\"network\""; then
+            echo exists
+            exit 0
+          else
+            influx bucket create -n network -o home -r 0
+            echo created
+          fi
+          '
       args:
         chdir: "{{ user_home.stdout }}/raspi-iot"
       register: ensure_network_bucket
-      changed_when: ensure_network_bucket.rc == 0
+        changed_when: 'created' in ensure_network_bucket.stdout
+        changed_when: ensure_network_bucket.rc == 0
+        changed_when: ensure_network_bucket.stdout | search('created')
 
     - name: Check existing token files
       stat:
