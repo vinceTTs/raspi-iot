@@ -41,7 +41,7 @@ if ! command -v speedtest >/dev/null 2>&1; then
 fi
 
 while true; do
-  JSON=$(speedtest -f json 2>/dev/null || true)
+  JSON=$(speedtest -f json --accept-license --accept-gdpr 2>/dev/null || true)
   if [ -n "$JSON" ]; then
     DL=$(echo "$JSON" | jq -r '.download.bandwidth')
     UL=$(echo "$JSON" | jq -r '.upload.bandwidth')
