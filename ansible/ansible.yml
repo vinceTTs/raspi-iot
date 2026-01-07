@@ -62,6 +62,22 @@
         - mosquitto/data
         - mosquitto/log
 
+    - name: Ensure scripts directory exists and is writable
+      file:
+        path: "{{ user_home.stdout }}/raspi-iot/scripts"
+        state: directory
+        mode: '0775'
+        owner: "{{ ansible_user_id }}"
+        group: "{{ ansible_user_id }}"
+
+    - name: Fix ownership on scripts directory recursively
+      file:
+        path: "{{ user_home.stdout }}/raspi-iot/scripts"
+        state: directory
+        recurse: yes
+        owner: "{{ ansible_user_id }}"
+        group: "{{ ansible_user_id }}"
+
     - name: Generate CA key and certificate
       shell: |
         openssl genrsa -out ca.key 2048
