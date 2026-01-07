@@ -95,7 +95,7 @@
       loop:
         - { path: "{{ user_home.stdout }}/raspi-iot/certs/ca.crt", mode: '0644' }
         - { path: "{{ user_home.stdout }}/raspi-iot/certs/raspi.crt", mode: '0644' }
-        - { path: "{{ user_home.stdout }}/raspi-iot/certs/raspi.key", mode: '0600' }
+        - { path: "{{ user_home.stdout }}/raspi-iot/certs/raspi.key", mode: '0644' }
       when: item.path is file
       become_user: "{{ ansible_user_id }}"
 
