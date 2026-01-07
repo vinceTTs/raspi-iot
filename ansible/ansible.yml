@@ -175,6 +175,8 @@
           Type=oneshot
           RemainAfterExit=yes
           WorkingDirectory={{ user_home.stdout }}/raspi-iot
+          User=raspi
+          Group=raspi
           ExecStart=/usr/bin/docker-compose up -d
           ExecStop=/usr/bin/docker-compose down
           TimeoutStartSec=0
@@ -369,6 +371,16 @@
         dest: "{{ user_home.stdout }}/raspi-iot/.env"
         content: "TELEGRAF_INFLUX_TOKEN={{ telegraf_token }}\n"
         mode: '0600'
+        owner: raspi
+        group: raspi
+
+    - name: Ensure entire project is owned by raspi
+      file:
+        path: "{{ user_home.stdout }}/raspi-iot"
+        state: directory
+        recurse: yes
+        owner: raspi
+        group: raspi
 
     - name: Start remaining services
       shell: |
