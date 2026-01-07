@@ -125,7 +125,7 @@ services:
     volumes:
       - ./scripts:/scripts:ro
     entrypoint: /bin/sh
-    command: -c "/scripts/run-speedtest.sh"
+    command: "/scripts/run-speedtest.sh"
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:1880/ || wget -qO- http://localhost:1880/ || exit 1"]
