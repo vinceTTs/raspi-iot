@@ -37,7 +37,7 @@ services:
       mosquitto:
         condition: service_started
     environment:
-      - INFLUX_TOKEN=${TELEGRAF_INFLUX_TOKEN:-}
+      - INFLUX_TOKEN=${TELEGRAF_INFLUX_TOKEN}
     restart: unless-stopped
 
   influxdb:

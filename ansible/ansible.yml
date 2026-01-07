@@ -65,7 +65,7 @@
     - name: Generate CA key and certificate
       shell: |
         openssl genrsa -out ca.key 2048
-        openssl req -new -x509 -key ca.key -out ca.crt -subj "/CN=Mosquitto CA"
+        openssl req -new -x509 -key ca.key -out ca.crt -subj "/CN=raspi ca"
       when: not ca_cert.stat.exists
       args:
         chdir: "{{ user_home.stdout }}/raspi-iot/certs"
@@ -73,9 +73,9 @@
 
     - name: Generate server certificate
       shell: |
-        openssl genrsa -out server.key 2048
-        openssl req -new -key server.key -out server.csr -subj "/CN=raspi.local"
-        openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out server.crt -days 3650 -sha256
+        openssl genrsa -out raspi.key 2048
+        openssl req -new -key raspi.key -out raspi.csr -subj "/CN=raspi.local"
+        openssl x509 -req -in raspi.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out raspi.crt -sha256
       when: not ca_cert.stat.exists
       args:
         chdir: "{{ user_home.stdout }}/raspi-iot/certs"
