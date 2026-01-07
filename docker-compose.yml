@@ -85,9 +85,8 @@ services:
     volumes:
       - ./grafana:/var/lib/grafana
       - ./influxdb:/var/lib/influxdb2:ro
-      - ./config/grafana-datasource-influxdb.yaml:/etc/grafana/provisioning/datasources/influxdb.yaml
-      - ./config/grafana-dashboards.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml
-      - ./config/dashboards:/var/lib/grafana/dashboards
+      - ./config/grafana/provisioning:/etc/grafana/provisioning
+      - ./config/grafana/dashboards:/var/lib/grafana/dashboards
     environment:
       - GF_SERVER_ROOT_URL=http://raspi.local/
       - GF_AUTH_ANONYMOUS_ENABLED=true
