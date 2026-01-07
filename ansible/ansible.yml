@@ -362,7 +362,7 @@
 
     - name: Update Grafana datasource token
       lineinfile:
-        path: "{{ user_home.stdout }}/raspi-iot/config/grafana-datasource-influxdb.yaml"
+        path: "{{ user_home.stdout }}/raspi-iot/config/grafana/provisioning/datasources/influxdb.yaml"
         regexp: '^\s*token:\s*.*$'
         line: "      token: {{ grafana_token }}"
 
