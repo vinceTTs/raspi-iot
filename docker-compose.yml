@@ -110,6 +110,23 @@ services:
     depends_on:
       - mosquitto
     restart: unless-stopped
+
+  speedtest:
+    image: alpine:3.19
+    container_name: speedtest
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    environment:
+      - INFLUX_URL=http://influxdb:8086
+      - INFLUX_ORG=home
+      - INFLUX_BUCKET=network
+      - INFLUX_TOKEN=${TELEGRAF_INFLUX_TOKEN}
+    volumes:
+      - ./scripts:/scripts:ro
+    entrypoint: /bin/sh
+    command: -c "chmod +x /scripts/run-speedtest.sh; /scripts/run-speedtest.sh"
+    restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:1880/ || wget -qO- http://localhost:1880/ || exit 1"]
       interval: 30s

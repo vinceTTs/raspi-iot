@@ -203,6 +203,16 @@
       changed_when: false
       failed_when: auth_list_check.rc != 0
 
+    - name: Ensure InfluxDB bucket "network" exists
+      shell: |
+        docker exec -e INFLUX_TOKEN={{ influx_admin_token }} influxdb sh -lc '
+          influx bucket list --org home --json | grep -q '"name":"network"' || influx bucket create -n network -o home -r 0
+        '
+      args:
+        chdir: "{{ user_home.stdout }}/raspi-iot"
+      register: ensure_network_bucket
+      changed_when: ensure_network_bucket.rc == 0
+
     - name: Check existing token files
       stat:
         path: "{{ user_home.stdout }}/raspi-iot/influxdb/{{ item }}.token"
