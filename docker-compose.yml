@@ -132,9 +132,4 @@ services:
       interval: 30s
       timeout: 5s
       retries: 5
-    healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:1880/ || wget -qO- http://localhost:1880/ || exit 1"]
-      interval: 30s
-      timeout: 5s
-      retries: 5
 
