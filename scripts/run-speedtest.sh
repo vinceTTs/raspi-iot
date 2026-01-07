@@ -42,22 +42,31 @@ fi
 
 while true; do
   JSON=$(speedtest -f json --accept-license --accept-gdpr 2>/dev/null || true)
-  if [ -n "$JSON" ]; then
-    DL=$(echo "$JSON" | jq -r '.download.bandwidth')
-    UL=$(echo "$JSON" | jq -r '.upload.bandwidth')
-    LAT=$(echo "$JSON" | jq -r '.ping.latency')
-    SRV=$(echo "$JSON" | jq -r '.server.name' | tr ' ' '_' | tr -cd '[:alnum:]_')
-    ISP=$(echo "$JSON" | jq -r '.isp' | tr ' ' '_' | tr -cd '[:alnum:]_')
-    # Convert bytes/s to bits/s if present
-    DL_BITS=0
-    UL_BITS=0
-    if [ "$DL" != "null" ] && [ -n "$DL" ]; then DL_BITS=$(awk "BEGIN {printf \"%.0f\", $DL*8}"); fi
-    if [ "$UL" != "null" ] && [ -n "$UL" ]; then UL_BITS=$(awk "BEGIN {printf \"%.0f\", $UL*8}"); fi
-    # Line protocol: integer fields with i suffix
-    LINE="internet_speed,host=raspi,server=$SRV,isp=$ISP download_bps=${DL_BITS}i,upload_bps=${UL_BITS}i,latency_ms=${LAT}"
-    curl -s -XPOST "$INFLUX_URL/api/v2/write?org=$INFLUX_ORG&bucket=$INFLUX_BUCKET&precision=s" \
-      -H "Authorization: Token $INFLUX_TOKEN" \
-      --data-binary "$LINE" >/dev/null || true
+
+  DL_BITS=0
+  UL_BITS=0
+  LAT=0
+  SRV=unknown
+  ISP=unknown
+
+  if [ -n "$JSON" ] && echo "$JSON" | jq -e . >/dev/null 2>&1; then
+    DL=$(echo "$JSON" | jq -r '.download.bandwidth // empty')
+    UL=$(echo "$JSON" | jq -r '.upload.bandwidth // empty')
+    LAT_VAL=$(echo "$JSON" | jq -r '.ping.latency // empty')
+    SRV_VAL=$(echo "$JSON" | jq -r '.server.name // empty' | tr ' ' '_' | tr -cd '[:alnum:]_')
+    ISP_VAL=$(echo "$JSON" | jq -r '.isp // empty' | tr ' ' '_' | tr -cd '[:alnum:]_')
+
+    if [ -n "$DL" ]; then DL_BITS=$(awk "BEGIN {printf \"%.0f\", $DL*8}"); fi
+    if [ -n "$UL" ]; then UL_BITS=$(awk "BEGIN {printf \"%.0f\", $UL*8}"); fi
+    if [ -n "$LAT_VAL" ]; then LAT="$LAT_VAL"; fi
+    if [ -n "$SRV_VAL" ]; then SRV="$SRV_VAL"; fi
+    if [ -n "$ISP_VAL" ]; then ISP="$ISP_VAL"; fi
   fi
+
+  LINE="internet_speed,host=raspi,server=$SRV,isp=$ISP download_bps=${DL_BITS}i,upload_bps=${UL_BITS}i,latency_ms=${LAT}"
+  curl -s -XPOST "$INFLUX_URL/api/v2/write?org=$INFLUX_ORG&bucket=$INFLUX_BUCKET&precision=s" \
+    -H "Authorization: Token $INFLUX_TOKEN" \
+    --data-binary "$LINE" >/dev/null || true
+
   sleep 600
 done
