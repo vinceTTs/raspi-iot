@@ -368,7 +368,7 @@
     - name: Copy provisioning directory recursively to tmp
       copy:
         src: "{{ user_home.stdout }}/raspi-iot/config/grafana/provisioning"
-        dest: "{{ user_home.stdout }}/tmp/grafana/provisioning"
+        dest: "{{ user_home.stdout }}/tmp/grafana"
         remote_src: yes
     
     - name: Update token in copied influxdb.yaml
