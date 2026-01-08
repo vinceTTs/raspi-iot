@@ -364,16 +364,16 @@
         path: "{{ user_home.stdout }}/tmp/grafana"
         state: directory
         mode: '0755'
-        owner: "{{ ansible_user_id }}"
-        group: "{{ ansible_user_id }}"
+        owner: raspi
+        group: raspi
 
     - name: Copy provisioning directory recursively to tmp
       copy:
         src: "{{ user_home.stdout }}/raspi-iot/config/grafana/provisioning"
         dest: "{{ user_home.stdout }}/tmp/grafana"
         remote_src: yes
-        owner: "{{ ansible_user_id }}"
-        group: "{{ ansible_user_id }}"
+        owner: raspi
+        group: raspi
     
     - name: Update token in copied influxdb.yaml
       lineinfile:
@@ -386,16 +386,16 @@
         dest: "{{ user_home.stdout }}/raspi-iot/.env"
         content: "TELEGRAF_INFLUX_TOKEN={{ telegraf_token }}\n"
         mode: '0600'
-        owner: "{{ ansible_user_id }}"
-        group: "{{ ansible_user_id }}"
+        owner: raspi
+        group: raspi
 
     - name: Ensure entire project is owned by raspi
       file:
         path: "{{ user_home.stdout }}/raspi-iot"
         state: directory
         recurse: yes
-        owner: "{{ ansible_user_id }}"
-        group: "{{ ansible_user_id }}"
+        owner: raspi
+        group: raspi
 
     - name: Start remaining services
       shell: |
