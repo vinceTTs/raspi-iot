@@ -81,8 +81,8 @@ services:
     image: grafana/grafana:latest
     container_name: grafana
     volumes:
+      # - ../tmp/token/influxdb/grafana-read.token:/var/lib/influxdb2/:ro
       - ../tmp/grafana/var/lib:/var/lib/grafana
-      - ../tmp/influxdb:/var/lib/influxdb2:ro
       - ../tmp/grafana/provisioning:/etc/grafana/provisioning
       - ./config/grafana/dashboards:/var/lib/grafana/dashboards
     environment:

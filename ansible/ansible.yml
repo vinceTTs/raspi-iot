@@ -333,7 +333,7 @@
 
     - name: Write tokens into host volume (mapped to /var/lib/influxdb2)
       copy:
-        dest: "{{ user_home.stdout }}/raspi-iot/influxdb/{{ item.name }}.token"
+        dest: "{{ user_home.stdout }}/tmp/token/influxdb/{{ item.name }}.token"
         content: "{{ item.value }}"
         mode: '0600'
       loop:
@@ -342,7 +342,7 @@
 
     - name: Slurp InfluxDB tokens
       slurp:
-        src: "{{ user_home.stdout }}/raspi-iot/influxdb/{{ item }}"
+        src: "{{ user_home.stdout }}/tmp/token/influxdb/{{ item }}"
       loop:
         - grafana-read.token
         - telegraf-write.token
