@@ -39,7 +39,7 @@
 
     - name: Create certificates directory
       file:
-        path: "{{ user_home.stdout }}/raspi-iot/certs"
+        path: "{{ user_home.stdout }}/tmp/certs"
         state: directory
         mode: '0755'
         owner: "{{ ansible_user_id }}"
@@ -47,12 +47,12 @@
 
     - name: Check if CA certificate exists
       stat:
-        path: "{{ user_home.stdout }}/raspi-iot/certs/ca.crt"
+        path: "{{ user_home.stdout }}/tmp/certs/ca.crt"
       register: ca_cert
 
     - name: Create service directories
       file:
-        path: "{{ user_home.stdout }}/raspi-iot/{{ item }}"
+        path: "{{ user_home.stdout }}/{{ item }}"
         state: directory
         mode: '0777'
       loop:
@@ -84,7 +84,7 @@
         openssl req -new -x509 -key ca.key -out ca.crt -subj "/CN=raspi ca"
       when: not ca_cert.stat.exists
       args:
-        chdir: "{{ user_home.stdout }}/raspi-iot/certs"
+        chdir: "{{ user_home.stdout }}/tmp/certs"
       become_user: "{{ ansible_user_id }}"
 
     - name: Generate server certificate
@@ -94,21 +94,21 @@
         openssl x509 -req -in raspi.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out raspi.crt -sha256
       when: not ca_cert.stat.exists
       args:
-        chdir: "{{ user_home.stdout }}/raspi-iot/certs"
+        chdir: "{{ user_home.stdout }}/tmp/certs"
       become_user: "{{ ansible_user_id }}"
 
     - name: Check server certificate has SAN for mosquitto
       shell: |
         openssl x509 -in raspi.crt -noout -text | grep -q "DNS:mosquitto"
       args:
-        chdir: "{{ user_home.stdout }}/raspi-iot/certs"
+        chdir: "{{ user_home.stdout }}/tmp/certs"
       register: san_check
       changed_when: false
       failed_when: false
 
     - name: Create OpenSSL config with SAN entries
       copy:
-        dest: "{{ user_home.stdout }}/raspi-iot/certs/openssl.cnf"
+        dest: "{{ user_home.stdout }}/tmp/certs/openssl.cnf"
         content: |
           [ req ]
           default_bits        = 2048
@@ -132,7 +132,7 @@
       shell: |
         openssl req -new -key raspi.key -out raspi.csr -config openssl.cnf -reqexts v3_req
       args:
-        chdir: "{{ user_home.stdout }}/raspi-iot/certs"
+        chdir: "{{ user_home.stdout }}/tmp/certs"
       when: san_check.rc != 0
       become_user: "{{ ansible_user_id }}"
 
@@ -140,13 +140,13 @@
       shell: |
         openssl x509 -req -in raspi.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out raspi.crt -days 3650 -sha256 -extensions v3_req -extfile openssl.cnf
       args:
-        chdir: "{{ user_home.stdout }}/raspi-iot/certs"
+        chdir: "{{ user_home.stdout }}/tmp/certs"
       when: san_check.rc != 0
       become_user: "{{ ansible_user_id }}"
 
     - name: Ensure certs directory has correct permissions
       file:
-        path: "{{ user_home.stdout }}/raspi-iot/certs"
+        path: "{{ user_home.stdout }}/tmp/certs"
         state: directory
         mode: '0755'
       become_user: "{{ ansible_user_id }}"
@@ -156,9 +156,9 @@
         path: "{{ item.path }}"
         mode: "{{ item.mode }}"
       loop:
-        - { path: "{{ user_home.stdout }}/raspi-iot/certs/ca.crt", mode: '0644' }
-        - { path: "{{ user_home.stdout }}/raspi-iot/certs/raspi.crt", mode: '0644' }
-        - { path: "{{ user_home.stdout }}/raspi-iot/certs/raspi.key", mode: '0644' }
+        - { path: "{{ user_home.stdout }}/tmp/certs/ca.crt", mode: '0644' }
+        - { path: "{{ user_home.stdout }}/tmp/certs/raspi.crt", mode: '0644' }
+        - { path: "{{ user_home.stdout }}/tmp/certs/raspi.key", mode: '0644' }
       when: item.path is file
       become_user: "{{ ansible_user_id }}"
 
@@ -362,12 +362,12 @@
     - name: Copy provisioning directory recursively to tmp
       copy:
         src: "{{ user_home.stdout }}/raspi-iot/config/grafana/provisioning"
-        dest: "{{ user_home.stdout }}/tmp/provisioning"
+        dest: "{{ user_home.stdout }}/tmp/grafana/provisioning"
         remote_src: yes
     
     - name: Update token in copied influxdb.yaml
       lineinfile:
-        path: "{{ user_home.stdout }}/tmp/provisioning/datasources/influxdb.yaml"
+        path: "{{ user_home.stdout }}/tmp/grafana/provisioning/datasources/influxdb.yaml"
         regexp: '^\s*token:\s*.*$'
         line: "      token: {{ grafana_token }}"
 
