@@ -331,7 +331,7 @@
         telegraf_token: "{{ (telegraf_list.stdout | default('[]') | from_json | selectattr('description','equalto','telegraf-write') | map(attribute='token') | list | first | default('')) }}"
       when: (telegraf_token | default('')) | length == 0
 
-    - name: Create certificates directory
+    - name: Create token directory
       file:
         path: "{{ user_home.stdout }}/tmp/token/influxdb"
         state: directory
@@ -372,6 +372,14 @@
         path: "{{ user_home.stdout }}/tmp/grafana"
         state: directory
         mode: '0755'
+        owner: raspi
+        group: raspi
+
+    - name: Ensure tmp/grafana/var/lib directory exists
+      file:
+        path: "{{ user_home.stdout }}/tmp/grafana/var/lib"
+        state: directory
+        mode: '0775'
         owner: raspi
         group: raspi
 
