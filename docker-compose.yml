@@ -24,8 +24,8 @@ services:
       - "8883:8883"
     volumes:
       - ./config/mosquitto.conf:/mosquitto/config/mosquitto.conf
-      - ./mosquitto/data:/mosquitto/data
-      - ./mosquitto/log:/mosquitto/log
+      - ../tmp/mosquitto/data:/mosquitto/data
+      - ../tmp/mosquitto/log:/mosquitto/log
       - ../tmp/certs:/mosquitto/config/certs
     restart: unless-stopped
     healthcheck:
@@ -40,7 +40,7 @@ services:
     volumes:
       - ./config/telegraf.conf:/etc/telegraf/telegraf.conf
       - ../tmp/certs:/etc/telegraf/certs
-      - ./influxdb/data:/var/lib/influxdb2
+      - ../tmp/influxdb/data:/var/lib/influxdb2
     depends_on:
       influxdb:
         condition: service_healthy
@@ -61,7 +61,7 @@ services:
     ports:
       - "8086:8086"
     volumes:
-      - ./influxdb:/var/lib/influxdb2
+      - ../tmp/influxdb:/var/lib/influxdb2
     environment:
       - DOCKER_INFLUXDB_INIT_MODE=setup
       - DOCKER_INFLUXDB_INIT_USERNAME=admin
@@ -81,10 +81,10 @@ services:
     image: grafana/grafana:latest
     container_name: grafana
     volumes:
-      - ./grafana:/var/lib/grafana
-      - ./influxdb:/var/lib/influxdb2:ro
-      - ./config/grafana/dashboards:/var/lib/grafana/dashboards
+      - ../tmp/grafana/var/lib:/var/lib/grafana
+      - ../tmp/influxdb:/var/lib/influxdb2:ro
       - ../tmp/grafana/provisioning:/etc/grafana/provisioning
+      - ./config/grafana/dashboards:/var/lib/grafana/dashboards
     environment:
       - GF_SERVER_ROOT_URL=http://raspi.local/
       - GF_AUTH_ANONYMOUS_ENABLED=true
@@ -103,7 +103,7 @@ services:
     image: nodered/node-red:latest
     container_name: node-red
     volumes:
-      - ./node-red:/data
+      - ../tmp/node-red:/data
     environment:
       - TZ=Europe/Berlin
     depends_on:
