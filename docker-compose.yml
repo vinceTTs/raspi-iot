@@ -77,16 +77,14 @@ services:
       retries: 30
     restart: unless-stopped
 
-
-
   grafana:
     image: grafana/grafana:latest
     container_name: grafana
     volumes:
       - ./grafana:/var/lib/grafana
       - ./influxdb:/var/lib/influxdb2:ro
-      - ./config/grafana/provisioning:/etc/grafana/provisioning
       - ./config/grafana/dashboards:/var/lib/grafana/dashboards
+      - ../tmp/provisioning:/etc/grafana/provisioning
     environment:
       - GF_SERVER_ROOT_URL=http://raspi.local/
       - GF_AUTH_ANONYMOUS_ENABLED=true
@@ -133,4 +131,3 @@ services:
       interval: 30s
       timeout: 5s
       retries: 5
-

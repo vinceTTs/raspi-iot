@@ -267,7 +267,6 @@
         telegraf_token: "{{ telegraf_token_slurp.content | b64decode | trim }}"
       when: token_file_stats.results[1].stat.exists
 
-
     - name: Create Grafana read token (JSON)
       shell: |
         docker exec -e INFLUX_TOKEN={{ influx_admin_token }} influxdb \
@@ -360,9 +359,15 @@
         grafana_token: "{{ slurped_tokens.results[0].content | b64decode | trim }}"
         telegraf_token: "{{ slurped_tokens.results[1].content | b64decode | trim }}"
 
-    - name: Update Grafana datasource token
+    - name: Copy provisioning directory recursively to tmp
+      copy:
+        src: "{{ user_home.stdout }}/raspi-iot/config/grafana/provisioning"
+        dest: "{{ user_home.stdout }}/tmp/provisioning"
+        remote_src: yes
+    
+    - name: Update token in copied influxdb.yaml
       lineinfile:
-        path: "{{ user_home.stdout }}/raspi-iot/config/grafana/provisioning/datasources/influxdb.yaml"
+        path: "{{ user_home.stdout }}/tmp/provisioning/datasources/influxdb.yaml"
         regexp: '^\s*token:\s*.*$'
         line: "      token: {{ grafana_token }}"
 
