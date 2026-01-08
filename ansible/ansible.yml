@@ -331,6 +331,14 @@
         telegraf_token: "{{ (telegraf_list.stdout | default('[]') | from_json | selectattr('description','equalto','telegraf-write') | map(attribute='token') | list | first | default('')) }}"
       when: (telegraf_token | default('')) | length == 0
 
+    - name: Create certificates directory
+      file:
+        path: "{{ user_home.stdout }}/tmp/token/influxdb"
+        state: directory
+        mode: '0755'
+        owner: "{{ ansible_user_id }}"
+        group: "{{ ansible_user_id }}"
+
     - name: Write tokens into host volume (mapped to /var/lib/influxdb2)
       copy:
         dest: "{{ user_home.stdout }}/tmp/token/influxdb/{{ item.name }}.token"
