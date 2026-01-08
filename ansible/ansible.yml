@@ -359,6 +359,12 @@
         grafana_token: "{{ slurped_tokens.results[0].content | b64decode | trim }}"
         telegraf_token: "{{ slurped_tokens.results[1].content | b64decode | trim }}"
 
+    - name: Ensure tmp/grafana directory exists
+      file:
+        path: "{{ user_home.stdout }}/tmp/grafana"
+        state: directory
+        mode: '0755'
+
     - name: Copy provisioning directory recursively to tmp
       copy:
         src: "{{ user_home.stdout }}/raspi-iot/config/grafana/provisioning"
