@@ -6,7 +6,7 @@
   skip_processors_after_aggregators = false
 
 [[inputs.mqtt_consumer]]
-  servers = ["ssl://mosquitto:8883"]
+  servers = ["ssl://mosquittoooooo.raspi.local:8883"]
   topics = ["sensors/temperature"]
   client_id = "telegraf"
   qos = 1
@@ -14,7 +14,7 @@
   tls_ca = "/etc/telegraf/certs/ca.crt"
   tls_cert = "/etc/telegraf/certs/raspi.crt"
   tls_key = "/etc/telegraf/certs/raspi.key"
-  tls_server_name = "mosquitto"
+  tls_server_name = "mosquittooooooo.raspi.local"
   insecure_skip_verify = false
 
   data_format = "json_v2"
@@ -24,7 +24,7 @@
       path = "temperatur"
 
 [[outputs.influxdb_v2]]
-  urls = ["http://influxdb:8086"]
+  urls = ["http://influx.raspi.local:8086"]
   token = "${INFLUX_TOKEN}"
   organization = "home"
   bucket = "sensors"

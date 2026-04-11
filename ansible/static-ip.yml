@@ -1,0 +1,35 @@
+---
+- name: Configure static IP on Raspberry Pi OS (dhcpcd)
+  hosts: raspi
+  become: true
+
+  vars:
+    static_interface: eth0
+    static_ip: 192.168.8.53/24
+    static_gateway: 192.168.8.1
+    static_dns:
+      - 192.168.8.53
+      - 1.1.1.1
+
+  tasks:
+    - name: Ensure dhcpcd is installed
+      ansible.builtin.apt:
+        name: dhcpcd5
+        state: present
+        update_cache: true
+
+    - name: Configure static IP in dhcpcd.conf
+      ansible.builtin.blockinfile:
+        path: /etc/dhcpcd.conf
+        create: false
+        marker: "# {mark} ANSIBLE STATIC IP"
+        block: |
+          interface {{ static_interface }}
+          static ip_address={{ static_ip }}
+          static routers={{ static_gateway }}
+          static domain_name_servers={{ static_dns | join(' ') }}
+
+    - name: Restart dhcpcd
+      ansible.builtin.systemd:
+        name: dhcpcd
+        state: restarted

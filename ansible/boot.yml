@@ -1,0 +1,31 @@
+---
+- name: Enable and start all IoT services on boot
+  hosts: raspi
+  become: true
+
+  vars:
+    iot_services:
+      - docker
+      - dnsmasq
+      - traefik-stack
+      - influxdb-stack
+      - grafana-stack
+      - mosquitto-stack
+      - telegraf-stack
+      - piwigo-stack
+
+  tasks:
+    - name: Gather service facts
+      ansible.builtin.service_facts:
+
+    - name: Filter existing services
+      ansible.builtin.set_fact:
+        existing_services: "{{ iot_services | select('in', ansible_facts.services.keys()) | list }}"
+
+    - name: Enable and start services
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        enabled: true
+        state: started
+        daemon_reload: true
+      loop: "{{ existing_services }}"

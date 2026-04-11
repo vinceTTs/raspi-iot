@@ -1,0 +1,287 @@
+---
+- name: Deploy image library Piwigo
+  hosts: raspi
+  become: true
+
+  vars:
+    base_dir: /opt/iot
+    piwigo_dir: "{{ base_dir }}/piwigo"
+    piwigo_gallery_root: "{{ piwigo_dir }}/gallery/galleries/Vincent"
+    usb_device: /dev/sda1
+    usb_mount_point: /mnt/usb
+    piwigo_base_url: "http://raspi.local/"
+    piwigo_admin_user: vincent
+    piwigo_admin_password: "1379"
+    piwigo_admin_email: vincent@raspi.local
+    piwigo_db_host: piwigo-db
+    piwigo_db_name: piwigo
+    piwigo_db_user: piwigo
+    piwigo_db_password: "{{ lookup('ansible.builtin.env', 'PIWIGO_DB_PASSWORD') | default('piwigo123', true) }}"
+    piwigo_db_prefix: piwigo_
+    piwigo_plugins:
+      - name: piwigo-openstreetmap
+        repo: https://github.com/Piwigo/piwigo-openstreetmap.git
+
+  tasks:
+    - name: Ensure global Docker network exists (shell-based, idempotent)
+      ansible.builtin.shell: |
+        docker network inspect iot-net >/dev/null 2>&1 || docker network create iot-net
+      changed_when: false
+
+    - name: Ensure Piwigo directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - "{{ piwigo_dir }}"
+        - "{{ piwigo_dir }}/config"
+        - "{{ piwigo_dir }}/gallery"
+        - "{{ piwigo_dir }}/db"
+
+    - name: Ensure USB mount point exists
+      ansible.builtin.file:
+        path: "{{ usb_mount_point }}"
+        state: directory
+        mode: '0755'
+
+    - name: Read USB UUID
+      ansible.builtin.command: "blkid -s UUID -o value {{ usb_device }}"
+      register: usb_uuid
+      changed_when: false
+
+    - name: Mount USB stick
+      ansible.builtin.mount:
+        path: "{{ usb_mount_point }}"
+        src: "UUID={{ usb_uuid.stdout }}"
+        fstype: auto
+        opts: defaults,nofail,x-systemd.device-timeout=10
+        state: mounted
+
+    - name: Ensure USB Bilder directory exists
+      ansible.builtin.file:
+        path: "{{ usb_mount_point }}/Bilder"
+        state: directory
+        mode: '0755'
+
+    - name: Ensure Piwigo gallery target exists
+      ansible.builtin.file:
+        path: "{{ piwigo_gallery_root }}"
+        state: directory
+        mode: '0755'
+
+    - name: Bind-mount Bilder into Piwigo gallery
+      ansible.builtin.mount:
+        path: "{{ piwigo_gallery_root }}"
+        src: "{{ usb_mount_point }}/Bilder"
+        fstype: none
+        opts: bind
+        state: mounted
+
+    - name: Copy Piwigo docker-compose # noqa no-relative-paths
+      ansible.builtin.copy:
+        src: "../files/piwigo/docker-compose.yml"
+        dest: "{{ piwigo_dir }}/docker-compose.yml"
+        mode: '0644'
+
+    - name: Pre-pull Piwigo images
+      ansible.builtin.command: docker compose pull
+      args:
+        chdir: "{{ piwigo_dir }}"
+      register: piwigo_pull
+      retries: 5
+      delay: 5
+      until: piwigo_pull.rc == 0
+      changed_when: false
+
+    - name: Install systemd service for Piwigo
+      ansible.builtin.copy:
+        dest: "/etc/systemd/system/piwigo-stack.service"
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Piwigo Image Library
+          Requires=docker.service
+          After=docker.service
+
+          [Service]
+          Type=oneshot
+          RemainAfterExit=yes
+          WorkingDirectory={{ piwigo_dir }}
+          ExecStart=/usr/bin/docker compose up -d
+          ExecStop=/usr/bin/docker compose down
+          TimeoutStartSec=0
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Enable and start Piwigo
+      ansible.builtin.systemd:
+        name: piwigo-stack
+        enabled: true
+        daemon_reload: true
+        state: started
+
+    - name: Check if Piwigo is already installed
+      ansible.builtin.stat:
+        path: "{{ piwigo_dir }}/config/www/local/config/database.inc.php"
+      register: piwigo_installed
+
+    - name: Wait for Piwigo installer to be reachable
+      ansible.builtin.uri:
+        url: http://127.0.0.1/install.php
+        method: GET
+        headers:
+          Host: raspi.local
+        status_code:
+          - 200
+          - 302
+      register: piwigo_install_page
+      retries: 10
+      delay: 1
+      until: piwigo_install_page.status in [200, 302]
+      when: not piwigo_installed.stat.exists
+
+    - name: Run Piwigo web installer (non-interactive)
+      ansible.builtin.uri:
+        url: http://127.0.0.1/install.php
+        method: POST
+        headers:
+          Host: raspi.local
+          Content-Type: application/x-www-form-urlencoded
+        body_format: form-urlencoded
+        body:
+          language: en_UK
+          dbhost: "{{ piwigo_db_host }}"
+          dbuser: "{{ piwigo_db_user }}"
+          dbpasswd: "{{ piwigo_db_password }}"
+          dbname: "{{ piwigo_db_name }}"
+          dbprefix: "{{ piwigo_db_prefix }}"
+          admin_name: "{{ piwigo_admin_user }}"
+          admin_pass1: "{{ piwigo_admin_password }}"
+          admin_pass2: "{{ piwigo_admin_password }}"
+          admin_mail: "{{ piwigo_admin_email }}"
+          install: Install
+        status_code:
+          - 200
+          - 302
+      when: not piwigo_installed.stat.exists
+
+    - name: Remove existing Piwigo base URL block (if misplaced)
+      ansible.builtin.blockinfile:
+        path: "{{ piwigo_dir }}/config/www/local/config/config.inc.php"
+        marker: "// {mark} ANSIBLE PIWIGO BASE URL"
+        state: absent
+      when: piwigo_installed.stat.exists or (piwigo_install_page is defined)
+
+    - name: Ensure config has PHP opening tag
+      ansible.builtin.lineinfile:
+        path: "{{ piwigo_dir }}/config/www/local/config/config.inc.php"
+        line: "<?php"
+        insertbefore: BOF
+        create: true
+      when: piwigo_installed.stat.exists or (piwigo_install_page is defined)
+
+    - name: Ensure Piwigo base URL for path routing
+      ansible.builtin.blockinfile:
+        path: "{{ piwigo_dir }}/config/www/local/config/config.inc.php"
+        create: true
+        marker: "// {mark} ANSIBLE PIWIGO BASE URL"
+        insertbefore: '^\?>'
+        block: |
+          $conf['gallery_url'] = '{{ piwigo_base_url }}';
+          $conf['base_url'] = '{{ piwigo_base_url }}';
+          $conf['root_url'] = '/';
+          $conf['cookie_path'] = '/';
+          $conf['guest_access'] = true;
+          $conf['guest_status'] = 'admin';
+          $conf['guest_access_level'] = 8;
+          $conf['gallery_title'] = 'Fotogalerie';
+          $conf['page_banner'] = '';
+          $conf['default_sort_order'] = 'date_creation DESC';
+          $conf['allow_user_registration'] = false;
+          $conf['allow_user_customization'] = false;
+          $conf['default_language'] = 'de_DE';
+      when: piwigo_installed.stat.exists or (piwigo_install_page is defined)
+
+    - name: Persist Piwigo settings in database config
+      ansible.builtin.shell: >
+        docker exec piwigo-db mysql
+        -u{{ piwigo_db_user }} -p{{ piwigo_db_password }}
+        -D {{ piwigo_db_name }}
+        -e "INSERT INTO config (param,value,comment) VALUES
+          ('gallery_url','{{ piwigo_base_url }}','ansible'),
+          ('base_url','{{ piwigo_base_url }}','ansible'),
+          ('root_url','/','ansible'),
+          ('cookie_path','/','ansible'),
+          ('guest_access','true','ansible'),
+          ('guest_status','admin','ansible'),
+          ('guest_access_level','8','ansible'),
+          ('gallery_title','Fotogalerie','ansible'),
+          ('page_banner','','ansible'),
+          ('default_sort_order','date_creation DESC','ansible'),
+          ('allow_user_registration','false','ansible'),
+          ('allow_user_customization','false','ansible'),
+          ('default_language','de_DE','ansible')
+        ON DUPLICATE KEY UPDATE value=VALUES(value);"
+      changed_when: false
+      failed_when: false
+      when: piwigo_installed.stat.exists or (piwigo_install_page is defined)
+
+    - name: Ensure git is installed for plugin checkout
+      ansible.builtin.apt:
+        name: git
+        state: present
+        update_cache: true
+
+    - name: Ensure Piwigo plugins directory exists
+      ansible.builtin.file:
+        path: "{{ piwigo_dir }}/config/www/plugins"
+        state: directory
+        mode: '0755'
+
+    - name: Install Piwigo plugins
+      ansible.builtin.git:
+        repo: "{{ item.repo }}"
+        dest: "{{ piwigo_dir }}/config/www/plugins/{{ item.name }}"
+        version: master
+        update: true
+      loop: "{{ piwigo_plugins }}"
+
+    - name: Set user language to German (guest and admin)
+      ansible.builtin.shell: >
+        docker exec piwigo-db mysql
+        -u{{ piwigo_db_user }} -p{{ piwigo_db_password }}
+        -D {{ piwigo_db_name }}
+        -e "UPDATE user_infos
+            SET language='de_DE'
+            WHERE user_id IN (1,2);"
+      changed_when: false
+      failed_when: false
+      when: piwigo_installed.stat.exists or (piwigo_install_page is defined)
+
+    - name: Clear Piwigo cache to apply new base URL
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ piwigo_dir }}/config/www/_data/combined"
+        - "{{ piwigo_dir }}/config/www/_data/config"
+        - "{{ piwigo_dir }}/config/www/_data/templates_c"
+        - "{{ piwigo_dir }}/config/www/_data/cache"
+      when: piwigo_installed.stat.exists or (piwigo_install_page is defined)
+
+    - name: Restart Piwigo stack
+      ansible.builtin.systemd:
+        name: piwigo-stack
+        state: restarted
+        daemon_reload: true
+
+    - name: Show Piwigo URL
+      ansible.builtin.debug:
+        msg:
+          - "---------------------------------------------"
+          - " Piwigo - Service URL"
+          - "---------------------------------------------"
+          - "Piwigo:                 http://raspi.local/"
+          - "---------------------------------------------"

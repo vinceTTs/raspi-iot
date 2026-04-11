@@ -1,0 +1,89 @@
+---
+- name: Deploy network Traefik reverse proxy
+  hosts: raspi
+  become: true
+
+  vars:
+    base_dir: /opt/iot
+    traefik_dir: "{{ base_dir }}/traefik"
+
+  tasks:
+    - name: Ensure global Docker network exists (shell-based, idempotent)
+      ansible.builtin.shell: |
+        docker network inspect iot-net >/dev/null 2>&1 || docker network create iot-net
+      changed_when: false
+
+    - name: Ensure Traefik directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - "{{ traefik_dir }}"
+        - "{{ traefik_dir }}/dynamic"
+        - "{{ traefik_dir }}/certs"
+
+    - name: Copy Traefik docker-compose # noqa no-relative-paths
+      ansible.builtin.copy:
+        src: "../files/traefik/docker-compose.yml"
+        dest: "{{ traefik_dir }}/docker-compose.yml"
+        mode: '0644'
+
+    - name: Copy Traefik static config # noqa no-relative-paths
+      ansible.builtin.copy:
+        src: "../files/traefik/traefik.yml"
+        dest: "{{ traefik_dir }}/traefik.yml"
+        mode: '0644'
+
+    - name: Copy Traefik dynamic config # noqa no-relative-paths
+      ansible.builtin.copy:
+        src: "../files/traefik/dynamic/"
+        dest: "{{ traefik_dir }}/dynamic/"
+        mode: '0644'
+
+    - name: Pre-pull Traefik image
+      ansible.builtin.command: docker compose pull
+      args:
+        chdir: "{{ traefik_dir }}"
+      register: traefik_pull
+      retries: 5
+      delay: 5
+      until: traefik_pull.rc == 0
+      changed_when: false
+
+    - name: Install systemd service for Traefik
+      ansible.builtin.copy:
+        dest: "/etc/systemd/system/traefik-stack.service"
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Traefik Reverse Proxy
+          Requires=docker.service
+          After=docker.service
+
+          [Service]
+          Type=oneshot
+          RemainAfterExit=yes
+          WorkingDirectory={{ traefik_dir }}
+          ExecStart=/usr/bin/docker compose up -d
+          ExecStop=/usr/bin/docker compose down
+          TimeoutStartSec=0
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Enable and start Traefik
+      ansible.builtin.systemd:
+        name: traefik-stack
+        enabled: true
+        daemon_reload: true
+        state: started
+
+    - name: Show Traefik URL
+      ansible.builtin.debug:
+        msg:
+          - "---------------------------------------------"
+          - " Traefik - Service URL"
+          - "---------------------------------------------"
+          - "Traefik Dashboard:     http://traefik.raspi.local"
+          - "---------------------------------------------"

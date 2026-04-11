@@ -1,0 +1,62 @@
+---
+- name: Install ESP-IDF
+  hosts: raspi
+
+  vars:
+    espidf_user: raspi
+    espidf_home: "/home/{{ espidf_user }}"
+    espidf_dir: "{{ espidf_home }}/esp-idf"
+
+  tasks:
+    - name: Install prerequisites
+      become: true
+      ansible.builtin.apt:
+        name:
+          - git
+          - wget
+          - flex
+          - bison
+          - gperf
+          - python3
+          - python3-pip
+          - python3-venv
+          - cmake
+          - ninja-build
+          - ccache
+          - libffi-dev
+          - libssl-dev
+          - dfu-util
+          - libusb-1.0-0
+        update_cache: true
+        cache_valid_time: 3600
+        state: present
+
+    - name: Get ESP-IDF
+      become: true
+      become_user: "{{ espidf_user }}"
+      ansible.builtin.git:
+        repo: https://github.com/espressif/esp-idf.git
+        dest: "{{ espidf_dir }}"
+        version: v5.5.2
+        depth: 1
+        single_branch: true
+        force: true
+
+    - name: Set up the tools
+      become: true
+      become_user: "{{ espidf_user }}"
+      ansible.builtin.shell:
+        chdir: "{{ espidf_dir }}"
+        cmd: ./install.sh esp32c3
+        executable: /bin/bash
+        creates: "{{ espidf_home }}/.espressif"
+    
+    - name: Set up environment alias
+      become: true
+      become_user: "{{ espidf_user }}"
+      ansible.builtin.lineinfile:
+        path: "{{ espidf_home }}/.bashrc"
+        line: "alias esp_idf='. {{ espidf_dir }}/export.sh'"
+        state: present
+        insertafter: EOF
+        create: true

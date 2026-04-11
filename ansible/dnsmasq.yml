@@ -1,0 +1,49 @@
+---
+- name: Configure dnsmasq as local DNS
+  hosts: raspi
+  become: true
+
+  vars:
+    dns_domain: raspi.local
+    dns_upstream:
+      - 1.1.1.1
+      - 8.8.8.8
+    dns_listen_ip: "{{ ansible_default_ipv4.address }}"
+
+  tasks:
+    - name: Install dnsmasq
+      ansible.builtin.apt:
+        name: dnsmasq
+        state: present
+        update_cache: true
+
+    - name: Disable systemd-resolved if present (port 53 conflict)
+      ansible.builtin.systemd:
+        name: systemd-resolved
+        state: stopped
+        enabled: false
+      failed_when: false
+
+    - name: Configure dnsmasq for local domain
+      ansible.builtin.copy:
+        dest: /etc/dnsmasq.d/raspi-iot.conf
+        mode: '0644'
+        content: |
+          domain-needed
+          bogus-priv
+          expand-hosts
+          local=/{{ dns_domain }}/
+          domain={{ dns_domain }}
+          listen-address=127.0.0.1,{{ dns_listen_ip }}
+          bind-interfaces
+          no-resolv
+          server={{ dns_upstream[0] }}
+          server={{ dns_upstream[1] }}
+          # Wildcard for all services
+          address=/.{{ dns_domain }}/{{ dns_listen_ip }}
+
+    - name: Enable and restart dnsmasq
+      ansible.builtin.systemd:
+        name: dnsmasq
+        state: restarted
+        enabled: true

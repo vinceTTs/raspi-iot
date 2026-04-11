@@ -1,0 +1,38 @@
+services:
+  influxdb:
+    image: influxdb:2.7
+    container_name: influxdb
+    ports:
+      - "8086:8086"
+    volumes:
+      - ./data:/var/lib/influxdb2
+      - ./config:/etc/influxdb2
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: admin
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUX_ADMIN_PASSWORD:-SuperSecret123}
+      DOCKER_INFLUXDB_INIT_ORG: home
+      DOCKER_INFLUXDB_INIT_BUCKET: default
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUX_ADMIN_TOKEN:-AdminToken123}
+    networks:
+      - iot-net
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.influx.rule=Host(`raspi.local`) && PathPrefix(`/influx`)"
+      - "traefik.http.routers.influx.entrypoints=web"
+      - "traefik.http.routers.influx.priority=100"
+      - "traefik.http.routers.influx.middlewares=influx-stripprefix"
+      - "traefik.http.middlewares.influx-stripprefix.stripPrefix.prefixes=/influx"
+      - "traefik.docker.network=iot-net"
+      - "traefik.http.services.influx.loadbalancer.server.port=8086"
+    healthcheck:
+      test: ["CMD", "influx", "ping", "--host", "http://localhost:8086"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+
+networks:
+  iot-net:
+    external: true

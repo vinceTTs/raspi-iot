@@ -1,0 +1,18 @@
+services:
+  telegraf:
+    image: telegraf:latest
+    container_name: telegraf
+    volumes:
+      - ./config/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+    networks:
+      - iot-net
+    healthcheck:
+      test: ["CMD-SHELL", "test -r /etc/telegraf/telegraf.conf && telegraf --version >/dev/null 2>&1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+networks:
+  iot-net:
+    external: true

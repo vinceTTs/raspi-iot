@@ -1,0 +1,21 @@
+[agent]
+  interval = "10s"
+  round_interval = true
+  # Explicitly set to current default to silence warning
+  # Change to true now if you want Telegraf v1.40 behavior
+  skip_processors_after_aggregators = false
+
+[[inputs.mqtt_consumer]]
+  servers = ["ssl://mosquitto.raspi.local:8883"]
+  topics = ["sensors/#"]
+  data_format = "json"
+  tls_ca = "/certs/ca.crt"
+  tls_cert = "/certs/telegraf.crt"
+  tls_key = "/certs/telegraf.key"
+  insecure_skip_verify = false
+
+[[outputs.influxdb_v2]]
+  urls = ["http://influxdb:8086"]
+  token = "{{ telegraf_influx_token }}"
+  organization = "home"
+  bucket = "default"

@@ -1,0 +1,339 @@
+---
+- name: Deploy IoT stack (InfluxDB, Grafana, Mosquitto, Telegraf)
+  hosts: raspi
+  become: true
+
+  vars:
+    base_dir: /opt/iot
+
+    influx_dir: "{{ base_dir }}/influxdb"
+    grafana_dir: "{{ base_dir }}/grafana"
+    mosquitto_dir: "{{ base_dir }}/mosquitto"
+    telegraf_dir: "{{ base_dir }}/telegraf"
+    speedtest_dir: "{{ base_dir }}/speedtest"
+
+    influx_admin_password: "SuperSecret123"
+    influx_admin_token: "AdminToken123"
+    influx_org: "home"
+    influx_bucket:
+      - default
+      - network
+      - levke
+
+  tasks:
+    - name: Ensure global Docker network exists (shell-based, idempotent)
+      ansible.builtin.shell: |
+        docker network inspect iot-net >/dev/null 2>&1 || docker network create iot-net
+      changed_when: false
+
+    - name: Ensure base directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - "{{ influx_dir }}"
+        - "{{ influx_dir }}/data"
+        - "{{ influx_dir }}/config"
+        - "{{ influx_dir }}/tokens"
+
+        - "{{ grafana_dir }}"
+        - "{{ grafana_dir }}/data"
+        - "{{ grafana_dir }}/provisioning"
+
+        - "{{ mosquitto_dir }}"
+        - "{{ mosquitto_dir }}/data"
+        - "{{ mosquitto_dir }}/config"
+        - "{{ mosquitto_dir }}/config/certs"
+
+        - "{{ telegraf_dir }}"
+        - "{{ telegraf_dir }}/config"
+
+        
+        - "{{ speedtest_dir }}"
+
+    - name: Ensure Grafana data dir ownership (UID 472)
+      ansible.builtin.file:
+        path: "{{ grafana_dir }}/data"
+        state: directory
+        owner: 472
+        group: 0
+        mode: '0755'
+        recurse: true
+
+    - name: Copy docker-compose files # noqa no-relative-paths
+      ansible.builtin.copy:
+        src: "../files/{{ item.name }}/docker-compose.yml"
+        dest: "{{ item.dest }}/docker-compose.yml"
+        mode: '0644'
+      loop:
+        - { name: "influxdb", dest: "{{ influx_dir }}" }
+        - { name: "grafana", dest: "{{ grafana_dir }}" }
+        - { name: "mosquitto", dest: "{{ mosquitto_dir }}" }
+        - { name: "telegraf", dest: "{{ telegraf_dir }}" }
+        - { name: "speedtest", dest: "{{ speedtest_dir }}" }
+    - name: Copy Mosquitto TLS config # noqa no-relative-paths
+      ansible.builtin.copy:
+        src: "../files/mosquitto/mosquitto.conf"
+        dest: "{{ mosquitto_dir }}/config/mosquitto.conf"
+        mode: '0644'
+      notify: Restart mosquitto stack
+
+
+    - name: Copy Grafana provisioning # noqa no-relative-paths
+      ansible.builtin.copy:
+        src: "../files/grafana/provisioning/"
+        dest: "{{ grafana_dir }}/provisioning/"
+        mode: '0644'
+      notify: Restart grafana stack
+
+    - name: Pre-pull stack images
+      ansible.builtin.command: docker compose pull
+      args:
+        chdir: "{{ item }}"
+      register: stack_pull
+      retries: 5
+      delay: 5
+      until: stack_pull.rc == 0
+      changed_when: false
+      loop:
+        - "{{ influx_dir }}"
+        - "{{ grafana_dir }}"
+        - "{{ mosquitto_dir }}"
+        - "{{ telegraf_dir }}"
+        - "{{ speedtest_dir }}"
+
+    - name: Install systemd services for stacks
+      ansible.builtin.copy:
+        dest: "/etc/systemd/system/{{ item.name }}.service"
+        mode: '0644'
+        content: |
+          [Unit]
+          Description={{ item.desc }}
+          Requires=docker.service
+          After=docker.service
+
+          [Service]
+          Type=oneshot
+          RemainAfterExit=yes
+          WorkingDirectory={{ item.dir }}
+          ExecStart=/usr/bin/docker compose up -d
+          ExecStop=/usr/bin/docker compose down
+          TimeoutStartSec=0
+
+          [Install]
+          WantedBy=multi-user.target
+      loop:
+        - { name: "influxdb-stack", desc: "InfluxDB Stack", dir: "{{ influx_dir }}" }
+        - { name: "grafana-stack", desc: "Grafana Stack", dir: "{{ grafana_dir }}" }
+        - { name: "mosquitto-stack", desc: "Mosquitto Stack", dir: "{{ mosquitto_dir }}" }
+        - { name: "telegraf-stack", desc: "Telegraf Stack", dir: "{{ telegraf_dir }}" }
+        - { name: "speedtest-stack", desc: "Speedtest Stack", dir: "{{ speedtest_dir }}" }
+
+    - name: Enable and start InfluxDB stack
+      ansible.builtin.systemd:
+        name: influxdb-stack
+        enabled: true
+        daemon_reload: true
+        state: started
+
+    - name: Wait for InfluxDB health endpoint
+      ansible.builtin.uri:
+        url: http://localhost:8086/health
+        method: GET
+        status_code: 200
+        return_content: false
+      register: influx_health
+      retries: 30
+      delay: 2
+      until: influx_health.status == 200
+      changed_when: false
+
+    - name: Check if Grafana token file exists
+      ansible.builtin.stat:
+        path: "{{ influx_dir }}/tokens/grafana-read.token"
+      register: grafana_token_stat
+
+    - name: Check if Telegraf token file exists
+      ansible.builtin.stat:
+        path: "{{ influx_dir }}/tokens/telegraf-write.token"
+      register: telegraf_token_stat
+
+    - name: Check if Speedtest token file exists
+      ansible.builtin.stat:
+        path: "{{ influx_dir }}/tokens/speedtest-write.token"
+      register: speedtest_token_stat
+
+    - name: Read existing Grafana token from file
+      ansible.builtin.slurp:
+        src: "{{ influx_dir }}/tokens/grafana-read.token"
+      register: grafana_token_file
+      when: grafana_token_stat.stat.exists
+
+    - name: Set Grafana token from file
+      ansible.builtin.set_fact:
+        grafana_token: "{{ grafana_token_file.content | b64decode }}"
+      when: grafana_token_stat.stat.exists
+
+    - name: Read existing Telegraf token from file
+      ansible.builtin.slurp:
+        src: "{{ influx_dir }}/tokens/telegraf-write.token"
+      register: telegraf_token_file
+      when: telegraf_token_stat.stat.exists
+
+    - name: Set Telegraf token from file
+      ansible.builtin.set_fact:
+        telegraf_token: "{{ telegraf_token_file.content | b64decode }}"
+      when: telegraf_token_stat.stat.exists
+
+    - name: Read existing Speedtest token from file
+      ansible.builtin.slurp:
+        src: "{{ influx_dir }}/tokens/speedtest-write.token"
+      register: speedtest_token_file
+      when: speedtest_token_stat.stat.exists
+
+    - name: Set Speedtest token from file
+      ansible.builtin.set_fact:
+        speedtest_token: "{{ speedtest_token_file.content | b64decode }}"
+      when: speedtest_token_stat.stat.exists
+
+    - name: List existing InfluxDB buckets (JSON)
+      ansible.builtin.shell: >
+        docker exec -e INFLUX_TOKEN={{ influx_admin_token }} influxdb
+        influx bucket list --org {{ influx_org }} --json
+      register: influx_buckets_json
+      changed_when: false
+
+    - name: Extract existing bucket names
+      ansible.builtin.set_fact:
+        existing_buckets: "{{ (influx_buckets_json.stdout | from_json) | map(attribute='name') | list }}"
+
+    - name: Create missing InfluxDB buckets
+      ansible.builtin.shell: >
+        docker exec -e INFLUX_TOKEN={{ influx_admin_token }} influxdb
+        influx bucket create -n {{ item }} -o {{ influx_org }} -r 0
+      loop: "{{ influx_bucket }}"
+      when: item not in existing_buckets
+      changed_when: true
+
+    - name: Create Grafana read token
+      ansible.builtin.shell: >
+        docker exec -e INFLUX_TOKEN={{ influx_admin_token }} influxdb
+        influx auth create -o {{ influx_org }} --read-buckets -d grafana-read --json
+      register: grafana_token_json
+      when: not grafana_token_stat.stat.exists
+      changed_when: true
+
+    - name: Extract Grafana token
+      ansible.builtin.set_fact:
+        grafana_token: "{{ (grafana_token_json.stdout | from_json).token }}"
+      when: not grafana_token_stat.stat.exists
+
+    - name: Create Telegraf write token
+      ansible.builtin.shell: >
+        docker exec -e INFLUX_TOKEN={{ influx_admin_token }} influxdb
+        influx auth create -o {{ influx_org }} --write-buckets -d telegraf-write --json
+      register: telegraf_token_json
+      when: not telegraf_token_stat.stat.exists
+      changed_when: true
+
+    - name: Extract Telegraf token
+      ansible.builtin.set_fact:
+        telegraf_token: "{{ (telegraf_token_json.stdout | from_json).token }}"
+      when: not telegraf_token_stat.stat.exists
+
+    - name: Create Speedtest write token
+      ansible.builtin.shell: >
+        docker exec -e INFLUX_TOKEN={{ influx_admin_token }} influxdb
+        influx auth create -o {{ influx_org }} --write-buckets -d speedtest-write --json
+      register: speedtest_token_json
+      when: not speedtest_token_stat.stat.exists
+      changed_when: true
+
+    - name: Extract Speedtest token
+      ansible.builtin.set_fact:
+        speedtest_token: "{{ (speedtest_token_json.stdout | from_json).token }}"
+      when: not speedtest_token_stat.stat.exists
+
+    - name: Save tokens to disk (only if newly created)
+      ansible.builtin.copy:
+        dest: "{{ influx_dir }}/tokens/{{ item.name }}.token"
+        content: "{{ item.value }}"
+        mode: '0600'
+      loop:
+        - { name: "grafana-read", value: "{{ grafana_token }}" }
+        - { name: "telegraf-write", value: "{{ telegraf_token }}" }
+        - { name: "speedtest-write", value: "{{ speedtest_token }}" }
+      when: (not grafana_token_stat.stat.exists) or (not telegraf_token_stat.stat.exists) or (not speedtest_token_stat.stat.exists)
+
+    - name: Template Grafana Influx datasource # noqa no-relative-paths
+      ansible.builtin.template:
+        src: "../templates/grafana/influxdb-datasource.yaml.j2"
+        dest: "{{ grafana_dir }}/provisioning/datasources/influxdb.yaml"
+        mode: '0644'
+      vars:
+        grafana_influx_token: "{{ grafana_token }}"
+      notify: Restart grafana stack
+
+    - name: Template Telegraf config # noqa no-relative-paths
+      ansible.builtin.template:
+        src: "../templates/telegraf/telegraf.conf.j2"
+        dest: "{{ telegraf_dir }}/config/telegraf.conf"
+        mode: '0644'
+      vars:
+        telegraf_influx_token: "{{ telegraf_token }}"
+      notify: Restart telegraf stack
+
+    - name: Enable and start remaining stacks
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        enabled: true
+        daemon_reload: true
+        state: started
+      loop:
+        - grafana-stack
+        - mosquitto-stack
+        - telegraf-stack
+        - speedtest-stack
+
+    - name: Copy restart.sh # noqa no-relative-paths
+      ansible.builtin.copy:
+        src: "../files/general/restart.sh"
+        dest: "{{ base_dir }}/restart.sh"
+        mode: '0744'
+    - name: Show IoT service URLs
+      ansible.builtin.debug:
+        msg:
+          - "---------------------------------------------"
+          - " IoT Stack - Service URLs"
+          - "---------------------------------------------"
+          - "Grafana:               http://raspi.local/grafana/"
+          - "InfluxDB UI:           http://raspi.local/influx/"
+          - "Mosquitto (MQTTS):      mqtts://mosquitto.raspi.local:8883"
+          - "Telegraf:              (läuft als Agent, keine Web-UI)"
+          - "---------------------------------------------"
+
+  handlers:
+    - name: Restart grafana stack
+      ansible.builtin.systemd:
+        name: grafana-stack
+        state: restarted
+        daemon_reload: true
+
+    - name: Restart mosquitto stack
+      ansible.builtin.systemd:
+        name: mosquitto-stack
+        state: restarted
+        daemon_reload: true
+
+    - name: Restart telegraf stack
+      ansible.builtin.systemd:
+        name: telegraf-stack
+        state: restarted
+        daemon_reload: true
+
+    - name: Restart speedtest stack
+      ansible.builtin.systemd:
+        name: speedtest-stack
+        state: restarted
+        daemon_reload: true

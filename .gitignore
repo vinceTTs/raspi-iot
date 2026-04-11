@@ -1,9 +1,3 @@
-# Runtime data and volumes
-certs/
-influxdb/
-mosquitto/data/
-mosquitto/log/
-
 # System-specific
 .env
 *.log

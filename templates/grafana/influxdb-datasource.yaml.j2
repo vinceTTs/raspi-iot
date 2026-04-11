@@ -2,16 +2,13 @@ apiVersion: 1
 
 datasources:
   - name: InfluxDB
-    uid: influxdb
     type: influxdb
     access: proxy
     url: http://influxdb:8086
+    isDefault: true
     jsonData:
       version: Flux
       organization: home
-      defaultBuckets: sensors
-      tlsSkipVerify: false
+      defaultBucket: default
     secureJsonData:
-      token: REPLACE_WITH_TOKEN
-    basicAuth: false
-    isDefault: true
+      token: {{ grafana_influx_token | quote }}

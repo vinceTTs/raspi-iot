@@ -1,0 +1,146 @@
+---
+- name: Create certificates
+  hosts: raspi
+  become: true
+  become_user: root
+  become_method: sudo
+
+  vars:
+    cert_dir: /opt/certs
+    ca_key: "{{ cert_dir }}/ca.key"
+    ca_crt: "{{ cert_dir }}/ca.crt"
+
+    server_key: "{{ cert_dir }}/raspi.key"
+    server_csr: "{{ cert_dir }}/raspi.csr"
+    server_crt: "{{ cert_dir }}/raspi.crt"
+
+    health_key: "{{ cert_dir }}/healthcheck.key"
+    health_csr: "{{ cert_dir }}/healthcheck.csr"
+    health_crt: "{{ cert_dir }}/healthcheck.crt"
+
+    telegraf_key: "{{ cert_dir }}/telegraf.key"
+    telegraf_csr: "{{ cert_dir }}/telegraf.csr"
+    telegraf_crt: "{{ cert_dir }}/telegraf.crt"
+
+  tasks:
+    - name: Create certificate directory
+      ansible.builtin.file:
+        path: "{{ cert_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Create CA private key
+      community.crypto.openssl_privatekey:
+        path: "{{ ca_key }}"
+        size: 2048
+        type: RSA
+        mode: '0600'
+
+    - name: Create CA certificate (self-signed)
+      community.crypto.x509_certificate:
+        path: "{{ ca_crt }}"
+        privatekey_path: "{{ ca_key }}"
+        provider: selfsigned
+        selfsigned_not_before: "+0s"
+        selfsigned_not_after: "+3650d"
+        mode: '0644'
+
+    - name: Create server private key
+      community.crypto.openssl_privatekey:
+        path: "{{ server_key }}"
+        size: 2048
+        type: RSA
+        mode: '0644'
+
+    - name: Create server CSR with SANs for services
+      community.crypto.openssl_csr:
+        path: "{{ server_csr }}"
+        privatekey_path: "{{ server_key }}"
+        common_name: "raspi.local"
+        subject_alt_name:
+          - "DNS:raspi.local"
+          - "DNS:traefik.raspi.local"
+          - "DNS:influx.raspi.local"
+          - "DNS:grafana.raspi.local"
+          - "DNS:piwigo.raspi.local"
+          - "DNS:mqtt.raspi.local"
+          - "DNS:mosquitto.raspi.local"
+          - "DNS:mosquitto"
+        mode: '0644'
+
+    - name: Sign server certificate with CA
+      community.crypto.x509_certificate:
+        path: "{{ server_crt }}"
+        csr_path: "{{ server_csr }}"
+        provider: ownca
+        ownca_path: "{{ ca_crt }}"
+        ownca_privatekey_path: "{{ ca_key }}"
+        ownca_not_before: "+0s"
+        ownca_not_after: "+3650d"
+        mode: '0644'
+
+    - name: Create healthcheck private key
+      community.crypto.openssl_privatekey:
+        path: "{{ health_key }}"
+        size: 2048
+        type: RSA
+        mode: '0600'
+
+    - name: Create telegraf private key
+      community.crypto.openssl_privatekey:
+        path: "{{ telegraf_key }}"
+        size: 2048
+        type: RSA
+        mode: '0600'
+
+    - name: Create telegraf CSR (client certificate)
+      community.crypto.openssl_csr:
+        path: "{{ telegraf_csr }}"
+        privatekey_path: "{{ telegraf_key }}"
+        common_name: "telegraf"
+        key_usage:
+          - digitalSignature
+        extended_key_usage:
+          - clientAuth
+        mode: '0644'
+
+    - name: Create extension file for telegraf certificate
+      ansible.builtin.copy:
+        dest: /tmp/telegraf_ext.cnf
+        mode: '0644'
+        content: |
+          extendedKeyUsage=clientAuth
+          keyUsage=digitalSignature
+
+    - name: Sign telegraf certificate with CA (openssl)
+      ansible.builtin.shell: |
+        openssl x509 -req \
+          -in {{ telegraf_csr }} \
+          -CA {{ ca_crt }} \
+          -CAkey {{ ca_key }} \
+          -CAcreateserial \
+          -out {{ telegraf_crt }} \
+          -days 3650 \
+          -sha256 \
+          -extfile /tmp/telegraf_ext.cnf
+      args:
+        executable: /bin/bash
+
+    - name: Fix permissions for telegraf certificates
+      ansible.builtin.file:
+        path: "{{ item }}"
+        owner: 998
+        group: 998
+        mode: '0600'
+      loop:
+        - "{{ telegraf_key }}"
+        - "{{ telegraf_crt }}"
+
+    - name: Fix permissions for CA certificate for telegraf
+      ansible.builtin.file:
+        path: "{{ ca_crt }}"
+        owner: 998
+        group: 998
+        mode: '0644'
