@@ -10,6 +10,16 @@
     dropbox_home: "/home/{{ dropbox_user }}"
     dropbox_config_dir: "{{ dropbox_home }}/.config/rclone"
     dropbox_config_file: "{{ dropbox_config_dir }}/rclone.conf"
+    dropbox_source_path: ""
+    dropbox_download_dir: /opt/dropbox-download
+    dropbox_copy_enable: true
+    dropbox_copy_schedule: "*-*-* 03:00:00"
+    dropbox_filter_file: "{{ dropbox_config_dir }}/dropbox-download.filter"
+    dropbox_filter_patterns:
+      - "*.jpg"
+      - "*.jpeg"
+      - "*.JPG"
+      - "*.JPEG"
     dropbox_mount_point: /mnt/dropbox
     dropbox_enable_mount: false
     dropbox_mount_options:
@@ -71,6 +81,45 @@
         group: "{{ dropbox_group }}"
         mode: '0755'
 
+    - name: Ensure Dropbox download directory exists
+      ansible.builtin.file:
+        path: "{{ dropbox_download_dir }}"
+        state: directory
+        owner: "{{ dropbox_user }}"
+        group: "{{ dropbox_group }}"
+        mode: '0755'
+
+    - name: Write Dropbox download filter file
+      ansible.builtin.copy:
+        dest: "{{ dropbox_filter_file }}"
+        owner: "{{ dropbox_user }}"
+        group: "{{ dropbox_group }}"
+        mode: '0600'
+        content: |
+          {% for pattern in dropbox_filter_patterns %}
+          + {{ pattern }}
+          {% endfor %}
+          - **
+      when: dropbox_filter_patterns | length > 0
+
+    - name: Create Dropbox copy script
+      ansible.builtin.copy:
+        dest: /usr/local/bin/dropbox-copy.sh
+        owner: root
+        group: root
+        mode: '0755'
+        content: |
+          #!/bin/bash
+          set -euo pipefail
+
+          /usr/bin/rclone copy "{{ dropbox_remote_name }}:{{ dropbox_source_path }}" "{{ dropbox_download_dir }}" \
+            --config "{{ dropbox_config_file }}" \
+            --create-empty-src-dirs \
+            --log-file /var/log/dropbox-rclone-copy.log \
+            --log-level INFO{% if dropbox_filter_patterns | length > 0 %} \
+            --filter-from "{{ dropbox_filter_file }}"{% endif %}
+      when: dropbox_copy_enable | bool
+
     - name: Test Dropbox connection
       ansible.builtin.command:
         argv:
@@ -83,6 +132,47 @@
       changed_when: false
       register: dropbox_test
       no_log: true
+
+    - name: Create systemd service for Dropbox copy
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/dropbox-rclone-copy.service
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Download selected files from Dropbox via rclone copy
+          Wants=network-online.target
+          After=network-online.target
+
+          [Service]
+          Type=oneshot
+          User={{ dropbox_user }}
+          Group={{ dropbox_group }}
+          ExecStart=/usr/local/bin/dropbox-copy.sh
+      when: dropbox_copy_enable | bool
+
+    - name: Create systemd timer for Dropbox copy
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/dropbox-rclone-copy.timer
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Run Dropbox download once per day
+
+          [Timer]
+          OnCalendar={{ dropbox_copy_schedule }}
+          Persistent=true
+
+          [Install]
+          WantedBy=timers.target
+      when: dropbox_copy_enable | bool
+
+    - name: Enable and start Dropbox copy timer
+      ansible.builtin.systemd:
+        name: dropbox-rclone-copy.timer
+        enabled: true
+        state: started
+        daemon_reload: true
+      when: dropbox_copy_enable | bool
 
     - name: Create systemd service for Dropbox mount
       ansible.builtin.copy:
@@ -121,5 +211,10 @@
           - "Dropbox wurde mit rclone konfiguriert."
           - "Remote: {{ dropbox_remote_name }}:"
           - "Config: {{ dropbox_config_file }}"
+          - "Download aktiv: {{ dropbox_copy_enable }}"
+          - "Dropbox-Quelle: {{ dropbox_remote_name }}:{{ dropbox_source_path }}"
+          - "Download-Ziel: {{ dropbox_download_dir }}"
+          - "Zeitplan: {{ dropbox_copy_schedule }}"
+          - "Filter: {{ (dropbox_filter_patterns | join(', ')) if (dropbox_filter_patterns | length > 0) else 'kein Filter' }}"
           - "Mount aktiv: {{ dropbox_enable_mount }}"
           - "Mount-Pfad: {{ dropbox_mount_point }}"
