@@ -1,0 +1,125 @@
+---
+- name: Configure Dropbox access on Raspberry Pi
+  hosts: local
+  become: true
+
+  vars:
+    dropbox_remote_name: dropbox
+    dropbox_user: "{{ ansible_user | default('raspi') }}"
+    dropbox_group: "{{ dropbox_user }}"
+    dropbox_home: "/home/{{ dropbox_user }}"
+    dropbox_config_dir: "{{ dropbox_home }}/.config/rclone"
+    dropbox_config_file: "{{ dropbox_config_dir }}/rclone.conf"
+    dropbox_mount_point: /mnt/dropbox
+    dropbox_enable_mount: false
+    dropbox_mount_options:
+      - --allow-other
+      - --dir-cache-time=72h
+      - --vfs-cache-mode=full
+      - --vfs-cache-max-age=24h
+    dropbox_access_token: "{{ lookup('ansible.builtin.env', 'DROPBOX_ACCESS_TOKEN') }}"
+
+  pre_tasks:
+    - name: Ensure Dropbox access token is provided
+      ansible.builtin.assert:
+        that:
+          - dropbox_access_token | length > 0
+        fail_msg: >-
+          Kein Dropbox Access Token gefunden. Setze vor dem Start die Umgebungsvariable
+          DROPBOX_ACCESS_TOKEN oder übergib die Variable per -e "dropbox_access_token=...".
+        success_msg: Dropbox Access Token gefunden.
+      no_log: true
+
+  tasks:
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Install rclone and FUSE packages
+      ansible.builtin.apt:
+        name:
+          - rclone
+          - fuse3
+        state: present
+
+    - name: Ensure rclone config directory exists
+      ansible.builtin.file:
+        path: "{{ dropbox_config_dir }}"
+        state: directory
+        owner: "{{ dropbox_user }}"
+        group: "{{ dropbox_group }}"
+        mode: '0700'
+
+    - name: Write rclone config for Dropbox
+      ansible.builtin.copy:
+        dest: "{{ dropbox_config_file }}"
+        owner: "{{ dropbox_user }}"
+        group: "{{ dropbox_group }}"
+        mode: '0600'
+        content: |
+          [{{ dropbox_remote_name }}]
+          type = dropbox
+          token = {{ dropbox_access_token }}
+      no_log: true
+
+    - name: Ensure Dropbox mount directory exists
+      ansible.builtin.file:
+        path: "{{ dropbox_mount_point }}"
+        state: directory
+        owner: "{{ dropbox_user }}"
+        group: "{{ dropbox_group }}"
+        mode: '0755'
+
+    - name: Test Dropbox connection
+      ansible.builtin.command:
+        argv:
+          - rclone
+          - lsd
+          - "{{ dropbox_remote_name }}:"
+          - --config
+          - "{{ dropbox_config_file }}"
+      become_user: "{{ dropbox_user }}"
+      changed_when: false
+      register: dropbox_test
+      no_log: true
+
+    - name: Create systemd service for Dropbox mount
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/dropbox-rclone.service
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Dropbox mount via rclone
+          Wants=network-online.target
+          After=network-online.target
+
+          [Service]
+          Type=simple
+          User={{ dropbox_user }}
+          Group={{ dropbox_group }}
+          ExecStart=/usr/bin/rclone mount {{ dropbox_remote_name }}: {{ dropbox_mount_point }} --config {{ dropbox_config_file }} {{ dropbox_mount_options | join(' ') }}
+          ExecStop=/bin/fusermount3 -uz {{ dropbox_mount_point }}
+          Restart=on-failure
+          RestartSec=10
+
+          [Install]
+          WantedBy=multi-user.target
+      when: dropbox_enable_mount | bool
+
+    - name: Enable and start Dropbox mount service
+      ansible.builtin.systemd:
+        name: dropbox-rclone.service
+        enabled: true
+        state: started
+        daemon_reload: true
+      when: dropbox_enable_mount | bool
+
+    - name: Print Dropbox status
+      ansible.builtin.debug:
+        msg:
+          - "Dropbox wurde mit rclone konfiguriert."
+          - "Remote: {{ dropbox_remote_name }}:"
+          - "Config: {{ dropbox_config_file }}"
+          - "Mount aktiv: {{ dropbox_enable_mount }}"
+          - "Mount-Pfad: {{ dropbox_mount_point }}"
