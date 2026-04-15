@@ -41,6 +41,8 @@
       - "*.jpeg"
       - "*.JPG"
       - "*.JPEG"
+      - "*.heic"
+      - "*.HEIC"
       - "*.mp4"
       - "*.MP4"
       - "*.mov"
@@ -79,6 +81,7 @@
           - rclone
           - fuse3
           - mpv
+          - libheif-examples
           - python3-pil
           - x11-xserver-utils
         state: present
@@ -184,6 +187,7 @@
           #!/usr/bin/env python3
           import json
           import os
+          import shutil
           import subprocess
           import sys
           import tempfile
@@ -195,17 +199,18 @@
           CONFIG_FILE = {{ dropbox_config_file | to_json }}
           FILTER_FILE = {{ dropbox_filter_file | to_json }}
           DOWNLOAD_DIR = Path({{ dropbox_download_dir | to_json }})
-            SLIDESHOW_MEDIA_DIR = Path({{ dropbox_slideshow_media_dir | to_json }})
+          SLIDESHOW_MEDIA_DIR = Path({{ dropbox_slideshow_media_dir | to_json }})
           PLAYLIST_FILE = Path({{ dropbox_playlist_file | to_json }})
           RECENT_DAYS = {{ dropbox_recent_days }}
           MIN_FILES = {{ dropbox_min_files }}
-            RESIZE_IMAGES = {{ dropbox_resize_images | ternary('True', 'False') }}
-            RESIZE_MAX_DIMENSION = {{ dropbox_resize_max_dimension }}
-            IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+          RESIZE_IMAGES = {{ dropbox_resize_images | ternary('True', 'False') }}
+          RESIZE_MAX_DIMENSION = {{ dropbox_resize_max_dimension }}
+          IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+          HEIC_SUFFIXES = {".heic", ".heif"}
 
-            try:
+          try:
               from PIL import Image, ImageOps
-            except ImportError:
+          except ImportError:
               Image = None
               ImageOps = None
 
@@ -306,8 +311,30 @@
                           except OSError:
                               pass
 
-                    def create_display_media(selected: list[str]) -> None:
-                      keep = {Path(path).as_posix() for path in selected}
+                    def resize_image(source_path: Path, target_path: Path) -> None:
+                      with Image.open(source_path) as image:
+                        image = ImageOps.exif_transpose(image)
+                        image.thumbnail((RESIZE_MAX_DIMENSION, RESIZE_MAX_DIMENSION))
+                        save_kwargs = {"optimize": True}
+                        if target_path.suffix.lower() in {".jpg", ".jpeg"}:
+                          if image.mode not in ("RGB", "L"):
+                            image = image.convert("RGB")
+                          save_kwargs["quality"] = 88
+                        image.save(target_path, **save_kwargs)
+
+                    def convert_heic(source_path: Path, target_path: Path) -> Path:
+                      converted_target = target_path.with_suffix(".jpg")
+                      converted_target.parent.mkdir(parents=True, exist_ok=True)
+                      subprocess.run(
+                        ["heif-convert", str(source_path), str(converted_target)],
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                      )
+                      return converted_target
+
+                    def create_display_media(selected: list[str]) -> dict[str, str]:
+                      generated: dict[str, str] = {}
                       SLIDESHOW_MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 
                       for rel_path in selected:
@@ -316,26 +343,27 @@
                         target_path.parent.mkdir(parents=True, exist_ok=True)
 
                         suffix = source_path.suffix.lower()
-                        if RESIZE_IMAGES and suffix in IMAGE_SUFFIXES and Image is not None and ImageOps is not None:
-                          with Image.open(source_path) as image:
-                            image = ImageOps.exif_transpose(image)
-                            image.thumbnail((RESIZE_MAX_DIMENSION, RESIZE_MAX_DIMENSION))
-                            save_kwargs = {"optimize": True}
-                            if suffix in {".jpg", ".jpeg"}:
-                              if image.mode not in ("RGB", "L"):
-                                image = image.convert("RGB")
-                              save_kwargs["quality"] = 88
-                            image.save(target_path, **save_kwargs)
-                        else:
-                          if target_path.exists() or target_path.is_symlink():
-                            target_path.unlink()
-                          target_path.symlink_to(source_path)
+                        actual_target = target_path
 
+                        if suffix in HEIC_SUFFIXES:
+                          actual_target = convert_heic(source_path, target_path)
+                          if RESIZE_IMAGES and Image is not None and ImageOps is not None:
+                            resize_image(actual_target, actual_target)
+                        elif RESIZE_IMAGES and suffix in IMAGE_SUFFIXES and Image is not None and ImageOps is not None:
+                          resize_image(source_path, target_path)
+                        else:
+                          if actual_target.exists() or actual_target.is_symlink():
+                            actual_target.unlink()
+                          actual_target.symlink_to(source_path)
+
+                        generated[rel_path] = actual_target.relative_to(SLIDESHOW_MEDIA_DIR).as_posix()
+
+                      keep_outputs = set(generated.values())
                       if SLIDESHOW_MEDIA_DIR.exists():
                         for file_path in sorted(SLIDESHOW_MEDIA_DIR.rglob("*"), reverse=True):
                           rel_path = file_path.relative_to(SLIDESHOW_MEDIA_DIR).as_posix()
                           if file_path.is_file() or file_path.is_symlink():
-                            if rel_path not in keep:
+                            if rel_path not in keep_outputs:
                               file_path.unlink()
                           elif file_path.is_dir():
                             try:
@@ -343,11 +371,16 @@
                             except OSError:
                               pass
 
-          def write_playlist(selected: list[str]) -> None:
+                      return generated
+
+                    def write_playlist(selected: list[str], generated: dict[str, str]) -> None:
               PLAYLIST_FILE.parent.mkdir(parents=True, exist_ok=True)
               with PLAYLIST_FILE.open("w", encoding="utf-8") as handle:
                   for rel_path in selected:
-                          local_path = SLIDESHOW_MEDIA_DIR / Path(rel_path)
+                          local_rel_path = generated.get(rel_path)
+                          if not local_rel_path:
+                            continue
+                          local_path = SLIDESHOW_MEDIA_DIR / Path(local_rel_path)
                       if local_path.exists():
                           handle.write(f"{local_path}\n")
 
@@ -359,8 +392,8 @@
               print(f"Ausgewählte Medien: {len(selected)}")
               copy_selected_files(selected)
               cleanup_local_files(selected)
-                      create_display_media(selected)
-              write_playlist(selected)
+                      generated = create_display_media(selected)
+                      write_playlist(selected, generated)
               print(f"Playlist geschrieben: {PLAYLIST_FILE}")
               return 0
 
