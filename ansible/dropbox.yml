@@ -10,6 +10,10 @@
     dropbox_home: "/home/{{ dropbox_user }}"
     dropbox_config_dir: "{{ dropbox_home }}/.config/rclone"
     dropbox_config_file: "{{ dropbox_config_dir }}/rclone.conf"
+    dropbox_access_token_file: "{{ playbook_dir }}/dropbox_access.token"
+    dropbox_access_token_from_env: "{{ lookup('ansible.builtin.env', 'DROPBOX_ACCESS_TOKEN') | trim }}"
+    dropbox_access_token_from_file: "{{ lookup('ansible.builtin.file', dropbox_access_token_file, errors='ignore') | trim }}"
+    dropbox_access_token_effective: "{{ (dropbox_access_token | default('', true)) or dropbox_access_token_from_env or dropbox_access_token_from_file }}"
     dropbox_source_path: ""
     dropbox_download_dir: /opt/dropbox-download
     dropbox_copy_enable: true
@@ -27,16 +31,15 @@
       - --dir-cache-time=72h
       - --vfs-cache-mode=full
       - --vfs-cache-max-age=24h
-    dropbox_access_token: "{{ lookup('ansible.builtin.env', 'DROPBOX_ACCESS_TOKEN') }}"
-
   pre_tasks:
     - name: Ensure Dropbox access token is provided
       ansible.builtin.assert:
         that:
-          - dropbox_access_token | length > 0
+          - dropbox_access_token_effective | length > 0
         fail_msg: >-
           Kein Dropbox Access Token gefunden. Setze vor dem Start die Umgebungsvariable
-          DROPBOX_ACCESS_TOKEN oder übergib die Variable per -e "dropbox_access_token=...".
+          DROPBOX_ACCESS_TOKEN, übergib die Variable per -e "dropbox_access_token=..."
+          oder lege die Datei {{ dropbox_access_token_file }} an.
         success_msg: Dropbox Access Token gefunden.
       no_log: true
 
@@ -70,7 +73,7 @@
         content: |
           [{{ dropbox_remote_name }}]
           type = dropbox
-          token = {{ dropbox_access_token }}
+          token = {{ dropbox_access_token_effective }}
       no_log: true
 
     - name: Ensure Dropbox mount directory exists
