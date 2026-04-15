@@ -134,7 +134,6 @@
       become_user: "{{ dropbox_user }}"
       changed_when: false
       register: dropbox_test
-      no_log: true
 
     - name: Create systemd service for Dropbox copy
       ansible.builtin.copy:
