@@ -10,10 +10,14 @@
     dropbox_home: "/home/{{ dropbox_user }}"
     dropbox_config_dir: "{{ dropbox_home }}/.config/rclone"
     dropbox_config_file: "{{ dropbox_config_dir }}/rclone.conf"
+    dropbox_token_file: "{{ playbook_dir }}/dropbox_token.json"
+    dropbox_token_from_file: "{{ lookup('ansible.builtin.file', dropbox_token_file, errors='ignore') | trim }}"
+    dropbox_token_effective: "{{ (dropbox_token | default('', true)) or dropbox_token_from_file }}"
     dropbox_access_token_file: "{{ playbook_dir }}/dropbox_access.token"
     dropbox_access_token_from_env: "{{ lookup('ansible.builtin.env', 'DROPBOX_ACCESS_TOKEN') | trim }}"
     dropbox_access_token_from_file: "{{ lookup('ansible.builtin.file', dropbox_access_token_file, errors='ignore') | trim }}"
     dropbox_access_token_effective: "{{ (dropbox_access_token | default('', true)) or dropbox_access_token_from_env or dropbox_access_token_from_file }}"
+    dropbox_auth_effective: "{{ dropbox_token_effective or dropbox_access_token_effective }}"
     dropbox_source_path: ""
     dropbox_download_dir: /opt/dropbox-download
     dropbox_copy_enable: true
@@ -35,12 +39,13 @@
     - name: Ensure Dropbox access token is provided
       ansible.builtin.assert:
         that:
-          - dropbox_access_token_effective | length > 0
+          - dropbox_auth_effective | length > 0
         fail_msg: >-
-          Kein Dropbox Access Token gefunden. Setze vor dem Start die Umgebungsvariable
-          DROPBOX_ACCESS_TOKEN, übergib die Variable per -e "dropbox_access_token=..."
-          oder lege die Datei {{ dropbox_access_token_file }} an.
-        success_msg: Dropbox Access Token gefunden.
+          Keine Dropbox-Anmeldedaten gefunden. Übergib entweder -e "dropbox_token=...",
+          -e "dropbox_access_token=...", setze die Umgebungsvariable DROPBOX_ACCESS_TOKEN,
+          lege die Datei {{ dropbox_token_file }} mit einem vollständigen rclone-Token-JSON an
+          oder lege die Datei {{ dropbox_access_token_file }} mit einem reinen Access-Token an.
+        success_msg: Dropbox-Anmeldedaten gefunden.
       no_log: true
 
   tasks:
@@ -73,7 +78,7 @@
         content: |
           [{{ dropbox_remote_name }}]
           type = dropbox
-          token = {{ dropbox_access_token_effective }}
+          token = {{ dropbox_auth_effective }}
       no_log: true
 
     - name: Ensure Dropbox mount directory exists
