@@ -20,15 +20,26 @@
     dropbox_auth_effective: "{{ dropbox_token_effective or dropbox_access_token_effective }}"
     dropbox_source_path: ""
     dropbox_download_dir: /opt/dropbox-download
+    dropbox_slideshow_dir: /opt/digital-frame
+    dropbox_playlist_file: "{{ dropbox_slideshow_dir }}/playlist.m3u"
     dropbox_copy_enable: true
     dropbox_copy_schedule: "*-*-* 03:00:00"
     dropbox_filter_file: "{{ dropbox_config_dir }}/dropbox-download.filter"
     dropbox_copy_log_file: "{{ dropbox_config_dir }}/dropbox-rclone-copy.log"
+    dropbox_recent_days: 7
+    dropbox_min_files: 10
+    dropbox_image_display_duration: 20
     dropbox_filter_patterns:
       - "*.jpg"
       - "*.jpeg"
       - "*.JPG"
       - "*.JPEG"
+      - "*.mp4"
+      - "*.MP4"
+      - "*.mov"
+      - "*.MOV"
+      - "*.m4v"
+      - "*.M4V"
     dropbox_mount_point: /mnt/dropbox
     dropbox_enable_mount: false
     dropbox_mount_options:
@@ -60,6 +71,7 @@
         name:
           - rclone
           - fuse3
+          - mpv
         state: present
 
     - name: Ensure rclone config directory exists
@@ -98,6 +110,14 @@
         group: "{{ dropbox_group }}"
         mode: '0755'
 
+    - name: Ensure slideshow directory exists
+      ansible.builtin.file:
+        path: "{{ dropbox_slideshow_dir }}"
+        state: directory
+        owner: "{{ dropbox_user }}"
+        group: "{{ dropbox_group }}"
+        mode: '0755'
+
     - name: Write Dropbox download filter file
       ansible.builtin.copy:
         dest: "{{ dropbox_filter_file }}"
@@ -111,6 +131,150 @@
           - **
       when: dropbox_filter_patterns | length > 0
 
+    - name: Create Dropbox media refresh script
+      ansible.builtin.copy:
+        dest: /usr/local/bin/dropbox-refresh-media.py
+        owner: root
+        group: root
+        mode: '0755'
+        content: |
+          #!/usr/bin/env python3
+          import json
+          import os
+          import subprocess
+          import sys
+          import tempfile
+          from datetime import datetime, timedelta, timezone
+          from pathlib import Path
+
+          REMOTE = {{ dropbox_remote_name | to_json }}
+          SOURCE_PATH = {{ dropbox_source_path | to_json }}
+          CONFIG_FILE = {{ dropbox_config_file | to_json }}
+          FILTER_FILE = {{ dropbox_filter_file | to_json }}
+          DOWNLOAD_DIR = Path({{ dropbox_download_dir | to_json }})
+          PLAYLIST_FILE = Path({{ dropbox_playlist_file | to_json }})
+          RECENT_DAYS = {{ dropbox_recent_days }}
+          MIN_FILES = {{ dropbox_min_files }}
+
+          def remote_spec() -> str:
+              return f"{REMOTE}:{SOURCE_PATH}" if SOURCE_PATH else f"{REMOTE}:"
+
+          def parse_modtime(value: str) -> datetime:
+              if not value:
+                  return datetime.fromtimestamp(0, tz=timezone.utc)
+              return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+          def run_json_command() -> list[dict]:
+              cmd = [
+                  "rclone",
+                  "lsjson",
+                  remote_spec(),
+                  "--recursive",
+                  "--files-only",
+                  "--config",
+                  CONFIG_FILE,
+              ]
+              if FILTER_FILE:
+                  cmd.extend(["--filter-from", FILTER_FILE])
+              result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+              return json.loads(result.stdout or "[]")
+
+          def select_files(items: list[dict]) -> list[str]:
+              cutoff = datetime.now(timezone.utc) - timedelta(days=RECENT_DAYS)
+              sorted_items = sorted(
+                  (item for item in items if not item.get("IsDir", False)),
+                  key=lambda item: parse_modtime(item.get("ModTime", "")),
+                  reverse=True,
+              )
+
+              selected: list[str] = []
+              selected_set: set[str] = set()
+
+              for item in sorted_items:
+                  path = item.get("Path")
+                  if not path:
+                      continue
+                  if parse_modtime(item.get("ModTime", "")) >= cutoff and path not in selected_set:
+                      selected.append(path)
+                      selected_set.add(path)
+
+              if len(selected) < MIN_FILES:
+                  for item in sorted_items:
+                      path = item.get("Path")
+                      if not path or path in selected_set:
+                          continue
+                      selected.append(path)
+                      selected_set.add(path)
+                      if len(selected) >= MIN_FILES:
+                          break
+
+              return selected
+
+          def copy_selected_files(selected: list[str]) -> None:
+              if not selected:
+                  PLAYLIST_FILE.parent.mkdir(parents=True, exist_ok=True)
+                  PLAYLIST_FILE.write_text("", encoding="utf-8")
+                  print("Keine passenden Medien gefunden.")
+                  return
+
+              with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as handle:
+                  handle.write("\n".join(selected))
+                  handle.write("\n")
+                  files_from_path = handle.name
+
+              try:
+                  cmd = [
+                      "rclone",
+                      "copy",
+                      remote_spec(),
+                      str(DOWNLOAD_DIR),
+                      "--config",
+                      CONFIG_FILE,
+                      "--files-from",
+                      files_from_path,
+                      "--no-traverse",
+                      "--create-empty-src-dirs",
+                  ]
+                  subprocess.run(cmd, check=True)
+              finally:
+                  os.unlink(files_from_path)
+
+          def cleanup_local_files(selected: list[str]) -> None:
+              keep = {Path(path).as_posix() for path in selected}
+              if DOWNLOAD_DIR.exists():
+                  for file_path in sorted(DOWNLOAD_DIR.rglob("*"), reverse=True):
+                      if file_path.is_file():
+                          rel_path = file_path.relative_to(DOWNLOAD_DIR).as_posix()
+                          if rel_path not in keep:
+                              file_path.unlink()
+                      elif file_path.is_dir():
+                          try:
+                              file_path.rmdir()
+                          except OSError:
+                              pass
+
+          def write_playlist(selected: list[str]) -> None:
+              PLAYLIST_FILE.parent.mkdir(parents=True, exist_ok=True)
+              with PLAYLIST_FILE.open("w", encoding="utf-8") as handle:
+                  for rel_path in selected:
+                      local_path = DOWNLOAD_DIR / Path(rel_path)
+                      if local_path.exists():
+                          handle.write(f"{local_path}\n")
+
+          def main() -> int:
+              DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+              items = run_json_command()
+              selected = select_files(items)
+              print(f"Ausgewählte Medien: {len(selected)}")
+              copy_selected_files(selected)
+              cleanup_local_files(selected)
+              write_playlist(selected)
+              print(f"Playlist geschrieben: {PLAYLIST_FILE}")
+              return 0
+
+          if __name__ == "__main__":
+              sys.exit(main())
+
     - name: Create Dropbox copy script
       ansible.builtin.copy:
         dest: /usr/local/bin/dropbox-copy.sh
@@ -121,12 +285,13 @@
           #!/bin/bash
           set -euo pipefail
 
-          /usr/bin/rclone copy "{{ dropbox_remote_name }}:{{ dropbox_source_path }}" "{{ dropbox_download_dir }}" \
-            --config "{{ dropbox_config_file }}" \
-            --create-empty-src-dirs \
-            --log-file "{{ dropbox_copy_log_file }}" \
-            --log-level INFO{% if dropbox_filter_patterns | length > 0 %} \
-            --filter-from "{{ dropbox_filter_file }}"{% endif %}
+          mkdir -p "$(dirname "{{ dropbox_copy_log_file }}")"
+
+          {
+            echo "[$(date --iso-8601=seconds)] Starte Dropbox-Medienaktualisierung"
+            /usr/bin/python3 /usr/local/bin/dropbox-refresh-media.py
+            echo "[$(date --iso-8601=seconds)] Dropbox-Medienaktualisierung abgeschlossen"
+          } >> "{{ dropbox_copy_log_file }}" 2>&1
       when: dropbox_copy_enable | bool
 
     - name: Test Dropbox connection
@@ -222,8 +387,12 @@
           - "Download aktiv: {{ dropbox_copy_enable }}"
           - "Dropbox-Quelle: {{ dropbox_remote_name }}:{{ dropbox_source_path }}"
           - "Download-Ziel: {{ dropbox_download_dir }}"
+          - "Slideshow-Playlist: {{ dropbox_playlist_file }}"
+          - "Letzte Tage bevorzugt: {{ dropbox_recent_days }}"
+          - "Mindestens Dateien: {{ dropbox_min_files }}"
           - "Zeitplan: {{ dropbox_copy_schedule }}"
           - "Manueller Einmal-Start: sudo systemctl start dropbox-rclone-copy.service"
+          - "Player-Empfehlung: mpv --fs --shuffle --loop-playlist=inf --image-display-duration={{ dropbox_image_display_duration }} --playlist={{ dropbox_playlist_file }}"
           - "Log-Datei: {{ dropbox_copy_log_file }}"
           - "Filter: {{ (dropbox_filter_patterns | join(', ')) if (dropbox_filter_patterns | length > 0) else 'kein Filter' }}"
           - "Mount aktiv: {{ dropbox_enable_mount }}"
