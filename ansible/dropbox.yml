@@ -21,6 +21,7 @@
     dropbox_source_path: ""
     dropbox_download_dir: /opt/dropbox-download
     dropbox_slideshow_dir: /opt/digital-frame
+    dropbox_slideshow_media_dir: "{{ dropbox_slideshow_dir }}/media"
     dropbox_playlist_file: "{{ dropbox_slideshow_dir }}/playlist.m3u"
     dropbox_copy_enable: true
     dropbox_copy_schedule: "*-*-* 03:00:00"
@@ -29,6 +30,12 @@
     dropbox_recent_days: 7
     dropbox_min_files: 10
     dropbox_image_display_duration: 20
+    dropbox_resize_images: true
+    dropbox_resize_max_dimension: 1920
+    dropbox_player_script: "{{ dropbox_home }}/.local/bin/start-digital-frame.sh"
+    dropbox_autostart_dir: "{{ dropbox_home }}/.config/autostart"
+    dropbox_autostart_file: "{{ dropbox_autostart_dir }}/digital-frame.desktop"
+    dropbox_enable_desktop_autostart: true
     dropbox_filter_patterns:
       - "*.jpg"
       - "*.jpeg"
@@ -72,7 +79,18 @@
           - rclone
           - fuse3
           - mpv
+          - python3-pil
+          - x11-xserver-utils
         state: present
+
+    - name: Ensure slideshow user is in video related groups
+      ansible.builtin.user:
+        name: "{{ dropbox_user }}"
+        groups:
+          - video
+          - render
+          - input
+        append: true
 
     - name: Ensure rclone config directory exists
       ansible.builtin.file:
@@ -118,6 +136,31 @@
         group: "{{ dropbox_group }}"
         mode: '0755'
 
+    - name: Ensure slideshow media directory exists
+      ansible.builtin.file:
+        path: "{{ dropbox_slideshow_media_dir }}"
+        state: directory
+        owner: "{{ dropbox_user }}"
+        group: "{{ dropbox_group }}"
+        mode: '0755'
+
+    - name: Ensure local user bin directory exists
+      ansible.builtin.file:
+        path: "{{ dropbox_home }}/.local/bin"
+        state: directory
+        owner: "{{ dropbox_user }}"
+        group: "{{ dropbox_group }}"
+        mode: '0755'
+
+    - name: Ensure desktop autostart directory exists
+      ansible.builtin.file:
+        path: "{{ dropbox_autostart_dir }}"
+        state: directory
+        owner: "{{ dropbox_user }}"
+        group: "{{ dropbox_group }}"
+        mode: '0755'
+      when: dropbox_enable_desktop_autostart | bool
+
     - name: Write Dropbox download filter file
       ansible.builtin.copy:
         dest: "{{ dropbox_filter_file }}"
@@ -152,9 +195,19 @@
           CONFIG_FILE = {{ dropbox_config_file | to_json }}
           FILTER_FILE = {{ dropbox_filter_file | to_json }}
           DOWNLOAD_DIR = Path({{ dropbox_download_dir | to_json }})
+            SLIDESHOW_MEDIA_DIR = Path({{ dropbox_slideshow_media_dir | to_json }})
           PLAYLIST_FILE = Path({{ dropbox_playlist_file | to_json }})
           RECENT_DAYS = {{ dropbox_recent_days }}
           MIN_FILES = {{ dropbox_min_files }}
+            RESIZE_IMAGES = {{ dropbox_resize_images | ternary('True', 'False') }}
+            RESIZE_MAX_DIMENSION = {{ dropbox_resize_max_dimension }}
+            IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+
+            try:
+              from PIL import Image, ImageOps
+            except ImportError:
+              Image = None
+              ImageOps = None
 
           def remote_spec() -> str:
               return f"{REMOTE}:{SOURCE_PATH}" if SOURCE_PATH else f"{REMOTE}:"
@@ -253,21 +306,60 @@
                           except OSError:
                               pass
 
+                    def create_display_media(selected: list[str]) -> None:
+                      keep = {Path(path).as_posix() for path in selected}
+                      SLIDESHOW_MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+
+                      for rel_path in selected:
+                        source_path = DOWNLOAD_DIR / Path(rel_path)
+                        target_path = SLIDESHOW_MEDIA_DIR / Path(rel_path)
+                        target_path.parent.mkdir(parents=True, exist_ok=True)
+
+                        suffix = source_path.suffix.lower()
+                        if RESIZE_IMAGES and suffix in IMAGE_SUFFIXES and Image is not None and ImageOps is not None:
+                          with Image.open(source_path) as image:
+                            image = ImageOps.exif_transpose(image)
+                            image.thumbnail((RESIZE_MAX_DIMENSION, RESIZE_MAX_DIMENSION))
+                            save_kwargs = {"optimize": True}
+                            if suffix in {".jpg", ".jpeg"}:
+                              if image.mode not in ("RGB", "L"):
+                                image = image.convert("RGB")
+                              save_kwargs["quality"] = 88
+                            image.save(target_path, **save_kwargs)
+                        else:
+                          if target_path.exists() or target_path.is_symlink():
+                            target_path.unlink()
+                          target_path.symlink_to(source_path)
+
+                      if SLIDESHOW_MEDIA_DIR.exists():
+                        for file_path in sorted(SLIDESHOW_MEDIA_DIR.rglob("*"), reverse=True):
+                          rel_path = file_path.relative_to(SLIDESHOW_MEDIA_DIR).as_posix()
+                          if file_path.is_file() or file_path.is_symlink():
+                            if rel_path not in keep:
+                              file_path.unlink()
+                          elif file_path.is_dir():
+                            try:
+                              file_path.rmdir()
+                            except OSError:
+                              pass
+
           def write_playlist(selected: list[str]) -> None:
               PLAYLIST_FILE.parent.mkdir(parents=True, exist_ok=True)
               with PLAYLIST_FILE.open("w", encoding="utf-8") as handle:
                   for rel_path in selected:
-                      local_path = DOWNLOAD_DIR / Path(rel_path)
+                          local_path = SLIDESHOW_MEDIA_DIR / Path(rel_path)
                       if local_path.exists():
                           handle.write(f"{local_path}\n")
 
           def main() -> int:
               DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+                      SLIDESHOW_MEDIA_DIR.mkdir(parents=True, exist_ok=True)
               items = run_json_command()
               selected = select_files(items)
               print(f"Ausgewählte Medien: {len(selected)}")
               copy_selected_files(selected)
               cleanup_local_files(selected)
+                      create_display_media(selected)
               write_playlist(selected)
               print(f"Playlist geschrieben: {PLAYLIST_FILE}")
               return 0
@@ -293,6 +385,50 @@
             echo "[$(date --iso-8601=seconds)] Dropbox-Medienaktualisierung abgeschlossen"
           } >> "{{ dropbox_copy_log_file }}" 2>&1
       when: dropbox_copy_enable | bool
+
+    - name: Create digital frame player start script
+      ansible.builtin.copy:
+        dest: "{{ dropbox_player_script }}"
+        owner: "{{ dropbox_user }}"
+        group: "{{ dropbox_group }}"
+        mode: '0755'
+        content: |
+          #!/bin/bash
+          set -euo pipefail
+
+          export DISPLAY=:0
+          export XAUTHORITY="{{ dropbox_home }}/.Xauthority"
+
+          if command -v xset >/dev/null 2>&1; then
+            xset s off -dpms s noblank >/dev/null 2>&1 || true
+          fi
+
+          until [ -f "{{ dropbox_playlist_file }}" ]; do
+            sleep 10
+          done
+
+          exec /usr/bin/mpv \
+            --fs \
+            --shuffle \
+            --loop-playlist=inf \
+            --no-terminal \
+            --image-display-duration={{ dropbox_image_display_duration }} \
+            --playlist="{{ dropbox_playlist_file }}"
+      when: dropbox_enable_desktop_autostart | bool
+
+    - name: Create desktop autostart entry for digital frame
+      ansible.builtin.copy:
+        dest: "{{ dropbox_autostart_file }}"
+        owner: "{{ dropbox_user }}"
+        group: "{{ dropbox_group }}"
+        mode: '0644'
+        content: |
+          [Desktop Entry]
+          Type=Application
+          Name=Digital Frame
+          Exec={{ dropbox_player_script }}
+          X-GNOME-Autostart-enabled=true
+      when: dropbox_enable_desktop_autostart | bool
 
     - name: Test Dropbox connection
       ansible.builtin.command:
@@ -387,12 +523,16 @@
           - "Download aktiv: {{ dropbox_copy_enable }}"
           - "Dropbox-Quelle: {{ dropbox_remote_name }}:{{ dropbox_source_path }}"
           - "Download-Ziel: {{ dropbox_download_dir }}"
+          - "Anzeige-Medien: {{ dropbox_slideshow_media_dir }}"
           - "Slideshow-Playlist: {{ dropbox_playlist_file }}"
           - "Letzte Tage bevorzugt: {{ dropbox_recent_days }}"
           - "Mindestens Dateien: {{ dropbox_min_files }}"
+          - "Bilder lokal verkleinern: {{ dropbox_resize_images }} (max {{ dropbox_resize_max_dimension }} px)"
           - "Zeitplan: {{ dropbox_copy_schedule }}"
           - "Manueller Einmal-Start: sudo systemctl start dropbox-rclone-copy.service"
-          - "Player-Empfehlung: mpv --fs --shuffle --loop-playlist=inf --image-display-duration={{ dropbox_image_display_duration }} --playlist={{ dropbox_playlist_file }}"
+          - "Player-Startscript: {{ dropbox_player_script }}"
+          - "Desktop-Autostart: {{ dropbox_autostart_file if dropbox_enable_desktop_autostart else 'deaktiviert' }}"
+          - "Player-Empfehlung manuell lokal am Pi: {{ dropbox_player_script }}"
           - "Log-Datei: {{ dropbox_copy_log_file }}"
           - "Filter: {{ (dropbox_filter_patterns | join(', ')) if (dropbox_filter_patterns | length > 0) else 'kein Filter' }}"
           - "Mount aktiv: {{ dropbox_enable_mount }}"
