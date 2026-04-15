@@ -23,6 +23,7 @@
     dropbox_copy_enable: true
     dropbox_copy_schedule: "*-*-* 03:00:00"
     dropbox_filter_file: "{{ dropbox_config_dir }}/dropbox-download.filter"
+    dropbox_copy_log_file: "{{ dropbox_config_dir }}/dropbox-rclone-copy.log"
     dropbox_filter_patterns:
       - "*.jpg"
       - "*.jpeg"
@@ -123,7 +124,7 @@
           /usr/bin/rclone copy "{{ dropbox_remote_name }}:{{ dropbox_source_path }}" "{{ dropbox_download_dir }}" \
             --config "{{ dropbox_config_file }}" \
             --create-empty-src-dirs \
-            --log-file /var/log/dropbox-rclone-copy.log \
+            --log-file "{{ dropbox_copy_log_file }}" \
             --log-level INFO{% if dropbox_filter_patterns | length > 0 %} \
             --filter-from "{{ dropbox_filter_file }}"{% endif %}
       when: dropbox_copy_enable | bool
@@ -222,6 +223,8 @@
           - "Dropbox-Quelle: {{ dropbox_remote_name }}:{{ dropbox_source_path }}"
           - "Download-Ziel: {{ dropbox_download_dir }}"
           - "Zeitplan: {{ dropbox_copy_schedule }}"
+          - "Manueller Einmal-Start: sudo systemctl start dropbox-rclone-copy.service"
+          - "Log-Datei: {{ dropbox_copy_log_file }}"
           - "Filter: {{ (dropbox_filter_patterns | join(', ')) if (dropbox_filter_patterns | length > 0) else 'kein Filter' }}"
           - "Mount aktiv: {{ dropbox_enable_mount }}"
           - "Mount-Pfad: {{ dropbox_mount_point }}"
